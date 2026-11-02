@@ -97,7 +97,7 @@ Deno.serve(async req=>{
    const target=await resolveUser(email,body.invite===true&&role==='empleado')
    if(target.id===caller&&!active)return bad('No puedes revocar tu propia asignación')
    // Restricción: el administrador solo puede cambiar permisos de empleado de su negocio.
-   const {data:old,error:oldErr}=await db.from('flashfood_business_access').select('id').eq('user_id',target.id).eq('business_id',businessId).eq('role',role).is('branch_id',branch).maybeSingle()
+   const {data:old,error:oldErr}=await db.from('flashfood_business_access').select('id').eq('user_id',target.id).eq('business_id',businessId).eq('role',role).is('branch_id',null).maybeSingle()
    if(oldErr)throw oldErr
    const payload={active,updated_at:new Date().toISOString()}
    const r=old?await db.from('flashfood_business_access').update(payload).eq('id',old.id):
