@@ -52,7 +52,6 @@ export default function ProfilePage() {
 
   useEffect(() => {
     let activo=true
-    setRoles([]);setHasBusiness(false);setHasEmployee(false)
     if(usuario)void loadMyAccess().then(result=>{
       if(!activo)return
       setRoles(result.roles)
@@ -60,7 +59,7 @@ export default function ProfilePage() {
       setHasEmployee(result.access.some(a=>a.role==='empleado'&&a.active))
     }).catch(()=>{})
     return()=>{activo=false}
-  },[usuario?.id])
+  },[usuario])
 
   async function salir() {
     if (cerrando) return
