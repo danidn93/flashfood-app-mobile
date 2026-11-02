@@ -105,7 +105,7 @@ export default function SuperadminPage() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Error inesperado') }
     finally { setLoading(false) }
   }, [section, page, invoke])
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { queueMicrotask(() => { void load() }) }, [load])
   const config = configs[section]
   const filtered = useMemo(() => rows.filter(row => JSON.stringify(row).toLowerCase().includes(query.toLowerCase())), [rows, query])
   const choose = (id: Section) => { setSection(id); setPage(1); setQuery(''); setEdit(null); setSidebar(false); setNotice('') }
@@ -237,7 +237,7 @@ export default function SuperadminPage() {
       </section>}
       {edit && config && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"><div className="mb-5 flex items-center justify-between"><h2 className="text-xl font-bold">{section === 'roles' ? 'Asignar o modificar rol' : `Editar ${config.title.toLowerCase()}`}</h2><button onClick={() => setEdit(null)}><X/></button></div>
         {section === 'roles' ? <div className="space-y-4"><label className="block text-sm">ID de usuario<input className="mt-1 w-full rounded-lg border p-3" value={roleUser} onChange={e => setRoleUser(e.target.value)} placeholder="UUID de Auth"/></label><label className="block text-sm">Rol<input className="mt-1 w-full rounded-lg border p-3" value={roleName} onChange={e => setRoleName(e.target.value)} placeholder="superadmin, admin, delivery..."/></label><label className="flex gap-2"><input type="checkbox" checked={roleActive} onChange={e => setRoleActive(e.target.checked)}/> Rol activo</label></div> : <div className="space-y-4">{Object.entries(config.fields || {}).map(([key, kind]) => {
-          const value = changes[key] !== undefined ? changes[key] : (key === 'ban' ? Boolean(edit.banned_until && new Date(String(edit.banned_until)) > new Date()) : edit[key])
+          const value = changes[key] !== undefined ? changes[key] : (key === 'ban' ? !!(edit.banned_until && new Date(String(edit.banned_until)) > new Date()) : edit[key])
           return <label key={key} className="block text-sm font-medium">{labels[key] || key}{kind === 'bool' ? <span className="mt-2 flex items-center gap-2"><input type="checkbox" checked={Boolean(value)} onChange={e => setChanges(old => ({ ...old, [key]: e.target.checked }))}/>{Boolean(value) ? 'Sí' : 'No'}</span> : kind === 'json' ? <textarea rows={5} className="mt-1 w-full rounded-lg border p-3 font-mono text-xs" value={typeof value === 'string' ? value : JSON.stringify(value ?? null, null, 2)} onChange={e => { try { setChanges(old => ({ ...old, [key]: JSON.parse(e.target.value) })) } catch { setChanges(old => ({ ...old, [key]: e.target.value })) } }}/> : <input className="mt-1 w-full rounded-lg border p-3" value={String(value ?? '')} onChange={e => setChanges(old => ({ ...old, [key]: e.target.value }))}/>}</label>
         })}</div>}
         <div className="mt-6 flex justify-end gap-3"><button onClick={() => setEdit(null)} className="rounded-xl border px-4 py-3">Cancelar</button><button disabled={saving || (section !== 'roles' && !Object.keys(changes).length)} onClick={() => void save()} className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-3 font-bold text-white disabled:opacity-50"><Save size={17}/>{saving ? 'Guardando…' : 'Guardar cambios'}</button></div></div></div>}
