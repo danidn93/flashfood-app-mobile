@@ -13,7 +13,7 @@ export default function BusinessAdminWorkspace(){
   const r=await loadBusinesses()
   setBusinesses(r.businesses.filter(b=>b.can_manage));setCurrent(old=>r.businesses.some(b=>b.id===old&&b.can_manage)?old:r.businesses.find(b=>b.can_manage)?.id||'')
  }
- useEffect(()=>{void refresh().catch(e=>setError(String(e))).finally(()=>setLoading(false))},[])
+ useEffect(()=>{queueMicrotask(()=>{void refresh().catch(e=>setError(String(e))).finally(()=>setLoading(false))})},[])
  useEffect(()=>{if(current)void loadEmployees(current).then(r=>setEmployees(r.employees)).catch(e=>setError(String(e)))},[current])
  const selected=businesses.find(b=>b.id===current)
  async function addEmployee(){
