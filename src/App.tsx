@@ -25,6 +25,7 @@ import RoleGuard from './components/RoleGuard'
 import BusinessAdminWorkspace from './pages/BusinessAdminWorkspace'
 import EmployeePage from './pages/EmployeePage'
 import DriverPage from './pages/DriverPage'
+import PasswordPage from './pages/PasswordPage'
 
 function SectionPage({ titulo }: { titulo: string }) {
   return (
@@ -96,7 +97,7 @@ function AppLayout() {
   }, [])
 
   const esPantallaAutenticacion =
-    location.pathname === '/login'
+    location.pathname === '/login' || ['/establecer-contrasena', '/restablecer-contrasena', '/cambiar-contrasena'].includes(location.pathname)
 
   return (
     <div className="min-h-dvh bg-[#F7F8FA] text-[#171717]">
@@ -165,6 +166,9 @@ function AppLayout() {
         <Route path="/negocio" element={<RoleGuard role="admin"><BusinessAdminWorkspace /></RoleGuard>} />
         <Route path="/empleado" element={<RoleGuard role="empleado"><EmployeePage /></RoleGuard>} />
         <Route path="/delivery" element={<RoleGuard role="delivery"><DriverPage /></RoleGuard>} />
+        <Route path="/establecer-contrasena" element={<PasswordPage mode="invite" />} />
+        <Route path="/restablecer-contrasena" element={<PasswordPage mode="recovery" />} />
+        <Route path="/cambiar-contrasena" element={<PasswordPage mode="change" />} />
 
         <Route
           path="/login"
