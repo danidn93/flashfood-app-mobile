@@ -1,4 +1,6 @@
 import { useEffect } from 'react'
+import { Capacitor } from '@capacitor/core'
+import { PushNotifications } from '@capacitor/push-notifications'
 import {
   obtenerCarrito,
   obtenerTiempoRestanteCarrito,
@@ -43,6 +45,66 @@ function SectionPage({ titulo }: { titulo: string }) {
 
 function AppLayout() {
   const location = useLocation()
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+
+    let active = true
+
+    // Register listeners before calling register(): native callbacks may arrive quickly.
+    const registration = PushNotifications.addListener('registration', (token) => {
+      if (!active) return
+      console.info('[FlashFood Push] Registro correcto, token recibido:', token.value.slice(0, 12) + '…')
+      // The full token will be persisted securely after the Supabase device registry is ready.
+    })
+
+    const registrationError = PushNotifications.addListener('registrationError', (error) => {
+      if (active) console.error('[FlashFood Push] Error en el registro:', error)
+    })
+
+    const received = PushNotifications.addListener('pushNotificationReceived', (notification) => {
+      if (active) console.info('[FlashFood Push] Notificación recibida:', notification.title)
+    })
+
+    const action = PushNotifications.addListener('pushNotificationActionPerformed', (event) => {
+      if (active) console.info('[FlashFood Push] Notificación abierta:', event.notification.id)
+    })
+
+    async function requestAndRegister() {
+      try {
+        // Ensure native listeners are installed before requesting registration.
+        await Promise.all([registration, registrationError, received, action])
+        if (!active) return
+
+        const current = await PushNotifications.checkPermissions()
+        let permission = current.receive
+
+        if (permission === 'prompt' || permission === 'prompt-with-rationale') {
+          const requested = await PushNotifications.requestPermissions()
+          permission = requested.receive
+        }
+
+        if (!active) return
+        if (permission !== 'granted') {
+          console.warn('[FlashFood Push] Permiso de notificaciones no concedido:', permission)
+          return
+        }
+
+        await PushNotifications.register()
+      } catch (error) {
+        if (active) console.error('[FlashFood Push] Error al solicitar permisos:', error)
+      }
+    }
+
+    void requestAndRegister()
+
+    return () => {
+      active = false
+      void Promise.all([registration, registrationError, received, action])
+        .then((listeners) => Promise.all(listeners.map((listener) => listener.remove())))
+        .catch((error: unknown) => console.error('[FlashFood Push] Error liberando listeners:', error))
+    }
+  }, [])
 
   useEffect(() => {
     let temporizador: ReturnType<typeof setTimeout> | undefined
