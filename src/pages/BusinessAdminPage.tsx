@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { ArrowLeft, Bike, ClipboardList, Package, Settings, Store, Users, Save } from 'lucide-react'
+import { ArrowLeft, ClipboardList, Package, Settings, Store, Users, Save } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 type Tab = 'dashboard' | 'orders' | 'products' | 'employees' | 'settings'
@@ -31,9 +31,9 @@ export default function BusinessAdminPage({ businessName, businessId, freeDelive
     finally { setSaving(false) }
   }
   return (
-    <div className="min-h-dvh bg-slate-50 pb-28 text-slate-900 lg:flex">
-      <aside className="bg-slate-950 p-5 text-white lg:min-h-dvh lg:w-72 lg:shrink-0">
-        <div className="mb-6 flex items-center gap-3"><Bike className="text-orange-500"/><div><strong className="block text-lg">FlashFood</strong><span className="text-xs text-slate-400">Administración de negocio</span></div></div>
+    <div className="min-h-full bg-slate-50 pb-28 text-slate-900 lg:flex">
+      <aside className="bg-slate-950 p-5 text-white lg:min-h-full lg:w-72 lg:shrink-0">
+        <div className="mb-6 flex items-center gap-3"><img src="/flashfood-logo.png" alt="FlashFood" className="h-12 w-12 shrink-0 rounded-xl object-contain"/><div><strong className="block text-lg">FlashFood</strong><span className="text-xs text-slate-400">Administración de negocio</span></div></div>
         <p className="mb-4 break-words text-sm text-slate-300">{businessName}</p>
         <nav className="flex gap-2 overflow-x-auto lg:flex-col">{items.map(({id,label,icon:Icon}) => <button key={id} onClick={() => setTab(id)} className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-sm ${tab === id ? 'bg-orange-500 text-white' : 'text-slate-300 hover:bg-slate-800'}`}><Icon size={18}/>{label}</button>)}</nav>
         <button onClick={() => navigate('/perfil')} className="mt-6 flex items-center gap-2 text-sm text-slate-300"><ArrowLeft size={17}/>Volver a mi perfil</button>
