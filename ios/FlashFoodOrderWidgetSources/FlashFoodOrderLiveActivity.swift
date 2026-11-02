@@ -9,7 +9,7 @@ struct FlashFoodOrderLiveActivity: Widget {
         ActivityConfiguration(for: FlashFoodOrderAttributes.self) { context in
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("FlashFood · Pedido #\\(context.attributes.orderNumber)")
+                    Text("FlashFood · Pedido #\(context.attributes.orderNumber)")
                         .font(.caption.bold())
                     Spacer()
                     Image(systemName: "shippingbox.fill")
@@ -20,7 +20,7 @@ struct FlashFoodOrderLiveActivity: Widget {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if let eta = context.state.estimatedArrival {
-                    Text("Llegada estimada: \\(eta, style: .time)")
+                    Text("Llegada estimada: \(eta, style: .time)")
                         .font(.caption)
                 }
             }
@@ -37,13 +37,13 @@ struct FlashFoodOrderLiveActivity: Widget {
                         .lineLimit(2)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text("Pedido #\\(context.attributes.orderNumber)")
+                    Text("Pedido #\(context.attributes.orderNumber)")
                         .font(.caption)
                 }
             } compactLeading: {
                 Image(systemName: "bicycle")
             } compactTrailing: {
-                Text("#\\(context.attributes.orderNumber)")
+                Text("#\(context.attributes.orderNumber)")
                     .font(.caption2)
             } minimal: {
                 Image(systemName: "bicycle")
