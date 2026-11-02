@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { ArrowLeft, Bike, ClipboardList, Package, Settings, Store, Users, Save } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
@@ -8,6 +8,7 @@ type Props = {
   businessId: string
   freeDelivery: boolean
   onSaveFreeDelivery: (businessId: string, enabled: boolean) => Promise<void>
+  employeeTools?: ReactNode
 }
 const items = [
   { id: 'dashboard', label: 'Resumen', icon: Store },
@@ -16,7 +17,7 @@ const items = [
   { id: 'employees', label: 'Empleados', icon: Users },
   { id: 'settings', label: 'Configuración', icon: Settings },
 ] as const
-export default function BusinessAdminPage({ businessName, businessId, freeDelivery, onSaveFreeDelivery }: Props) {
+export default function BusinessAdminPage({ businessName, businessId, freeDelivery, onSaveFreeDelivery, employeeTools }: Props) {
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('dashboard')
   const [enabled, setEnabled] = useState(freeDelivery)
@@ -50,7 +51,7 @@ export default function BusinessAdminPage({ businessName, businessId, freeDelive
           {error && <p role="alert" className="mt-4 text-sm text-red-600">{error}</p>}
           {message && <p role="status" className="mt-4 text-sm text-green-700">{message}</p>}
           <button onClick={() => void save()} disabled={saving || enabled === freeDelivery} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-orange-500 px-5 py-3 font-semibold text-white disabled:opacity-50"><Save size={18}/>{saving ? 'Guardando…' : 'Guardar configuración'}</button>
-        </section> : <section className="max-w-2xl rounded-2xl border bg-white p-6 shadow-sm"><p className="font-semibold">{items.find(x => x.id === tab)?.label} de {businessName}</p><p className="mt-2 text-sm text-slate-600">Este módulo se conectará a las operaciones autorizadas del negocio. No se muestran datos simulados.</p></section>}
+        </section> : tab === 'employees' && employeeTools ? employeeTools : <section className="max-w-2xl rounded-2xl border bg-white p-6 shadow-sm"><p className="font-semibold">{items.find(x => x.id === tab)?.label} de {businessName}</p><p className="mt-2 text-sm text-slate-600">Este módulo se conectará a las operaciones autorizadas del negocio. No se muestran datos simulados.</p></section>}
       </main>
     </div>
   )

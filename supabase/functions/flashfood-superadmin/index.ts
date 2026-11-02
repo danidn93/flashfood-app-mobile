@@ -174,6 +174,33 @@ Deno.serve(async req => {
       if (error) throw error
       return json({ ok: true, user_id: data.user.id })
     }
+    if (action === 'set_role_by_email') {
+      const email=asString(body.email,255).toLowerCase()
+      const role=asString(body.role,60)
+      const active=body.active
+      if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || !['superadmin','admin','empleado','delivery'].includes(role) || typeof active!=='boolean') return fail('Correo, rol o estado inválidos')
+      let userId:string|null=null
+      for(let p=1;p<=100;p++){
+        const {data:users,error:e}=await db.auth.admin.listUsers({page:p,perPage:1000})
+        if(e)throw e
+        const match=users.users.find(u=>u.email?.toLowerCase()===email)
+        if(match){userId=match.id;break}
+        if(users.users.length<1000)break
+      }
+      if(!userId){
+        if(body.invite!==true)return fail('El usuario no existe. Activa la opción de enviar invitación.',404)
+        const {data:invitation,error:e}=await db.auth.admin.inviteUserByEmail(email)
+        if(e)throw e
+        if(!invitation.user)return fail('No se pudo invitar al usuario')
+        userId=invitation.user.id
+      }
+      if(userId===identity.user.id&&role==='superadmin'&&!active)return fail('No puedes revocar tu propio acceso')
+      const {data:existing,error:readError}=await db.from('flashfood_user_roles').select('id').eq('user_id',userId).eq('role',role).maybeSingle()
+      if(readError)throw readError
+      const result=existing?await db.from('flashfood_user_roles').update({active}).eq('id',existing.id).select().single():await db.from('flashfood_user_roles').insert({user_id:userId,role,active}).select().single()
+      if(result.error)throw result.error
+      return json({ok:true,user_id:userId,role,active})
+    }
     if (action === 'set_role') {
       const userId = body.user_id
       const role = asString(body.role, 60)

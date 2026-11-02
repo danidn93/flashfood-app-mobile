@@ -13,7 +13,8 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { cerrarSesion } from '../services/auth'
-import { verificarSuperadmin } from '../services/permisos'
+import { loadMyAccess,type RoleName } from '../services/roles'
+import { Store, Bike, BriefcaseBusiness } from 'lucide-react'
 
 export default function ProfilePage() {
   const navigate = useNavigate()
@@ -21,7 +22,9 @@ export default function ProfilePage() {
   const [cargando, setCargando] = useState(true)
   const [cerrando, setCerrando] = useState(false)
   const [error, setError] = useState('')
-  const [esSuperadmin, setEsSuperadmin] = useState(false)
+  const [roles, setRoles] = useState<RoleName[]>([])
+  const [hasBusiness, setHasBusiness] = useState(false)
+  const [hasEmployee, setHasEmployee] = useState(false)
 
   useEffect(() => {
     let activo = true
@@ -48,15 +51,15 @@ export default function ProfilePage() {
   }, [])
 
   useEffect(() => {
-    let activo = true
-    setEsSuperadmin(false)
-    if (usuario) {
-      void verificarSuperadmin().then((permitido) => {
-        if (activo) setEsSuperadmin(permitido)
-      })
-    }
-    return () => { activo = false }
-  }, [usuario?.id])
+    let activo=true
+    if(usuario)void loadMyAccess().then(result=>{
+      if(!activo)return
+      setRoles(result.roles)
+      setHasBusiness(result.superadmin||result.access.some(a=>a.role==='admin'&&a.active))
+      setHasEmployee(result.access.some(a=>a.role==='empleado'&&a.active))
+    }).catch(()=>{})
+    return()=>{activo=false}
+  },[usuario])
 
   async function salir() {
     if (cerrando) return
@@ -124,10 +127,7 @@ export default function ProfilePage() {
     )
   }
 
-  const nombre =
-    typeof usuario.user_metadata?.full_name === 'string'
-      ? usuario.user_metadata.full_name
-      : 'Cliente FlashFood'
+  const nombre = String(usuario.user_metadata?.full_name || usuario.user_metadata?.name || 'Usuario FlashFood')
 
   return (
     <main className="mx-auto max-w-lg px-4 pb-28 pt-6">
@@ -154,13 +154,18 @@ export default function ProfilePage() {
         </div>
       </section>
 
-      {esSuperadmin && (
+      <p className="mt-3 text-xs font-semibold text-gray-500">Cliente{roles.includes('superadmin') ? ' · Superadmin' : ''}{hasBusiness ? ' · Administrador de negocio' : ''}{hasEmployee ? ' · Empleado' : ''}{roles.includes('delivery') ? ' · Delivery' : ''}</p>
+      {roles.includes('superadmin') && (
         <Link to="/superadmin" className="mt-4 flex items-center gap-3 rounded-2xl border border-orange-100 bg-white px-5 py-4">
           <Shield size={20} className="text-[#F97316]" />
           <span className="flex-1 text-sm font-bold text-gray-800">Panel Superadmin</span>
           <ChevronRight size={18} className="text-gray-400" />
         </Link>
       )}
+
+      {hasBusiness && <Link to="/negocio" className="mt-4 flex items-center gap-3 rounded-2xl border border-orange-100 bg-white px-5 py-4"><Store size={20} className="text-[#F97316]"/><span className="flex-1 text-sm font-bold text-gray-800">Administrar mi negocio</span><ChevronRight size={18}/></Link>}
+      {hasEmployee && <Link to="/empleado" className="mt-4 flex items-center gap-3 rounded-2xl border border-orange-100 bg-white px-5 py-4"><BriefcaseBusiness size={20} className="text-[#F97316]"/><span className="flex-1 text-sm font-bold text-gray-800">Panel de empleado</span><ChevronRight size={18}/></Link>}
+      {roles.includes('delivery') && <Link to="/delivery" className="mt-4 flex items-center gap-3 rounded-2xl border border-orange-100 bg-white px-5 py-4"><Bike size={20} className="text-[#F97316]"/><span className="flex-1 text-sm font-bold text-gray-800">Panel de repartidor</span><ChevronRight size={18}/></Link>}
 
       <section className="mt-4 overflow-hidden rounded-2xl border border-gray-100 bg-white">
         <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-4">

@@ -157,7 +157,7 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    void cargarRestaurantes()
+    queueMicrotask(() => { void cargarRestaurantes() })
   }, [])
 
   const filtrados = useMemo(() => {
