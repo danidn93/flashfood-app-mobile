@@ -195,7 +195,9 @@ Deno.serve(async req => {
         if(list.users.some(u=>u.email?.toLowerCase()===email))return fail('Ya existe una cuenta con ese correo. Utiliza Asignar rol por correo.',409)
         if(list.users.length<1000)break
       }
-      const {data:invitation,error:inviteError}=await db.auth.admin.inviteUserByEmail(email,{data:{full_name:name}})
+      const appUrl=Deno.env.get('FLASHFOOD_APP_URL')?.replace(/\\/$/,'')
+      if(!appUrl || !/^https:\/\//.test(appUrl))return fail('Configura FLASHFOOD_APP_URL con el dominio HTTPS público de FlashFood.',503)
+      const {data:invitation,error:inviteError}=await db.auth.admin.inviteUserByEmail(email,{data:{full_name:name},redirectTo:appUrl+'/establecer-contrasena'})
       if(inviteError)throw inviteError
       const userId=invitation.user?.id
       if(!userId)return fail('No se pudo crear la invitación',500)
