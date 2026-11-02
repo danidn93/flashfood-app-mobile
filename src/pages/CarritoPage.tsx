@@ -181,6 +181,7 @@ export default function CarritoPage() {
       setPropina(0)
     }
   }, [esDelivery])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const subtotal = useMemo(() => redondear(calcularSubtotalCarrito(carrito)), [carrito])
   const cantidadTotal = carrito?.items.reduce((n, item) => n + item.cantidad, 0) ?? 0
