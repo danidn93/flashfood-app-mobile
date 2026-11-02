@@ -90,3 +90,34 @@ video {
   max-width: 100%;
 }
 
+
+/* El contenido de Capacitor nunca debe quedar debajo de la barra del sistema. */
+:root {
+  --flashfood-safe-top: env(safe-area-inset-top, 0px);
+  --flashfood-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+#root {
+  padding-top: var(--flashfood-safe-top);
+  height: 100dvh;
+  min-height: 0;
+}
+.flashfood-app-shell {
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.flashfood-admin-screen {
+  height: 100%;
+  min-height: 0;
+}
+.flashfood-admin-sidebar {
+  top: var(--flashfood-safe-top);
+}
+@media (min-width: 1024px) {
+  .flashfood-admin-sidebar {
+    top: 0;
+  }
+}
