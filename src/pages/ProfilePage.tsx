@@ -168,13 +168,13 @@ export default function ProfilePage() {
       {roles.includes('delivery') && <Link to="/delivery" className="mt-4 flex items-center gap-3 rounded-2xl border border-orange-100 bg-white px-5 py-4"><Bike size={20} className="text-[#F97316]"/><span className="flex-1 text-sm font-bold text-gray-800">Panel de repartidor</span><ChevronRight size={18}/></Link>}
 
       <section className="mt-4 overflow-hidden rounded-2xl border border-gray-100 bg-white">
-        <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-4">
+        <Link to="/cambiar-contrasena" className="flex items-center gap-3 border-b border-gray-100 px-5 py-4">
           <ShieldCheck size={19} className="text-[#F97316]" />
           <span className="flex-1 text-sm font-semibold text-gray-800">
-            Seguridad de la cuenta
+            Cambiar contraseña
           </span>
           <ChevronRight size={17} className="text-gray-300" />
-        </div>
+        </Link>
 
         <div className="flex items-center gap-3 px-5 py-4 opacity-60">
           <Trash2 size={19} className="text-red-500" />
