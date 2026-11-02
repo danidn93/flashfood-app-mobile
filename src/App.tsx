@@ -21,6 +21,10 @@ import LoginPage from './pages/LoginPage'
 import ProfilePage from './pages/ProfilePage'
 import SuperadminPage from './pages/SuperadminPage'
 import SuperadminGuard from './components/SuperadminGuard'
+import RoleGuard from './components/RoleGuard'
+import BusinessAdminWorkspace from './pages/BusinessAdminWorkspace'
+import EmployeePage from './pages/EmployeePage'
+import DriverPage from './pages/DriverPage'
 
 function SectionPage({ titulo }: { titulo: string }) {
   return (
@@ -158,6 +162,9 @@ function AppLayout() {
         />
 
         <Route path="/superadmin" element={<SuperadminGuard><SuperadminPage /></SuperadminGuard>} />
+        <Route path="/negocio" element={<RoleGuard role="admin"><BusinessAdminWorkspace /></RoleGuard>} />
+        <Route path="/empleado" element={<RoleGuard role="empleado"><EmployeePage /></RoleGuard>} />
+        <Route path="/delivery" element={<RoleGuard role="delivery"><DriverPage /></RoleGuard>} />
 
         <Route
           path="/login"
