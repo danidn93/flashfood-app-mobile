@@ -73,6 +73,11 @@ export default function SuperadminPage() {
   const [previewNight, setPreviewNight] = useState(false)
   const [cardFee, setCardFee] = useState('15')
   const [cardSettingExists, setCardSettingExists] = useState(false)
+  const [createOpen,setCreateOpen]=useState(false)
+  const [createName,setCreateName]=useState('')
+  const [createEmail,setCreateEmail]=useState('')
+  const [createRole,setCreateRole]=useState('cliente')
+  const [createBusiness,setCreateBusiness]=useState('')
   const [roleEmail,setRoleEmail]=useState('')
   const [roleBusiness,setRoleBusiness]=useState('')
   const [roleInvite,setRoleInvite]=useState(false)
@@ -153,6 +158,20 @@ export default function SuperadminPage() {
   const previewExtra = Math.max(0, Number(previewKm || 0) - delivery.included_km)
   const previewTotal = delivery.base_fee + previewExtra * delivery.additional_km_fee +
     (previewNight ? delivery.night_fee : 0) + (delivery.rain_enabled ? delivery.rain_fee : 0)
+  const openCreateUser=()=>{
+    setCreateOpen(true);setCreateName('');setCreateEmail('');setCreateRole('cliente');setCreateBusiness('');setError('')
+    void loadBusinesses().then(r=>setBusinessChoices(r.businesses)).catch(e=>setError(e instanceof Error?e.message:'No se pudieron cargar los negocios'))
+  }
+  const submitCreateUser=async()=>{
+    if(createName.trim().length<3||!createEmail.includes('@')){setError('Indica el nombre completo y correo del usuario');return}
+    if((createRole==='admin'||createRole==='empleado')&&!createBusiness){setError('Selecciona el negocio del usuario');return}
+    setSaving(true);setError('');setNotice('')
+    try{
+      await invoke('create_user',{name:createName.trim(),email:createEmail.trim().toLowerCase(),role:createRole,business_id:(createRole==='admin'||createRole==='empleado')?createBusiness:null})
+      setCreateOpen(false);setNotice('Usuario invitado correctamente. Debe aceptar la invitación enviada a su correo.');await load()
+    }catch(e){setError(e instanceof Error?e.message:'No se pudo crear el usuario')}
+    finally{setSaving(false)}
+  }
   const saveRoleByEmail=async()=>{
     if(!roleEmail.includes('@')||!roleName){setError('Indica correo y rol');return}
     setSaving(true);setError('');setNotice('')
@@ -212,7 +231,7 @@ export default function SuperadminPage() {
         ['Pedidos marketplace', dashboard?.orders, ClipboardList], ['Repartidores', dashboard?.drivers, Bike],
         ['Roles activos', dashboard?.users, Users], ['Ventas pagadas marketplace', currency(dashboard?.gross_sales ?? 0), CreditCard],
       ].map(([label, value, Icon]) => { const I = Icon as typeof Store; return <div key={String(label)} className="rounded-2xl border bg-white p-5 shadow-sm"><I className="mb-3 text-orange-500" size={24}/><p className="text-sm text-slate-500">{String(label)}</p><p className="mt-2 text-2xl font-extrabold">{loading ? '…' : String(value ?? 0)}</p></div> })}</div><p className="mt-5 text-sm text-slate-500">Los pedidos y ventas corresponden a flashfood_orders. Los restaurantes y sucursales registrados se cuentan desde sus tablas originales.</p></> : <div className="rounded-2xl border bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b p-5"><div><h2 className="font-bold">{config?.title}</h2><p className="text-xs text-slate-500">Página {page} · {rows.length} registros cargados</p></div><div className="flex flex-wrap gap-2"><label className="flex items-center gap-2 rounded-xl border px-3 py-2"><Search size={17}/><input className="w-40 outline-none" placeholder="Buscar en esta página" value={query} onChange={e => setQuery(e.target.value)}/></label></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b p-5"><div><h2 className="font-bold">{config?.title}</h2><p className="text-xs text-slate-500">Página {page} · {rows.length} registros cargados</p></div><div className="flex flex-wrap gap-2">{section === 'users' && <button onClick={openCreateUser} className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-semibold text-white">+ Crear usuario</button>}<label className="flex items-center gap-2 rounded-xl border px-3 py-2"><Search size={17}/><input className="w-40 outline-none" placeholder="Buscar en esta página" value={query} onChange={e => setQuery(e.target.value)}/></label></div></div>
         <div className="overflow-x-auto"><table className="w-full min-w-[780px] text-left text-sm"><thead className="bg-slate-50"><tr>{config?.columns.map(key => <th key={key} className="px-4 py-3">{labels[key] || key}</th>)}{config?.entity && <th className="px-4 py-3">Acciones</th>}</tr></thead><tbody>{filtered.map((row, index) => <tr key={String(row.id ?? index)} className="border-t">{config?.columns.map(key => <td key={key} className="max-w-64 truncate px-4 py-3" title={show(row[key], key)}>{show(row[key], key)}</td>)}{config?.entity && <td className="px-4 py-3"><button onClick={() => startEdit(row)} className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 font-semibold text-orange-600"><Pencil size={15}/> Editar</button></td>}</tr>)}</tbody></table>{!filtered.length && <p className="p-8 text-center text-slate-500">No hay registros en esta página.</p>}</div>
         <div className="flex justify-end gap-2 border-t p-4"><button disabled={page === 1 || loading} onClick={() => setPage(p => p - 1)} className="rounded-lg border px-4 py-2 disabled:opacity-40">Anterior</button><button disabled={rows.length < 100 || loading} onClick={() => setPage(p => p + 1)} className="rounded-lg border px-4 py-2 disabled:opacity-40">Siguiente</button></div>
       </div>}
@@ -235,6 +254,33 @@ export default function SuperadminPage() {
           <label className="flex items-center gap-2"><input type="checkbox" checked={roleInvite} onChange={e=>setRoleInvite(e.target.checked)}/> Invitar si no existe</label>
         </div>
       </section>}
+
+      {createOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="max-h-[90dvh] w-full max-w-xl space-y-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+          <div className="flex items-center justify-between"><h2 className="text-xl font-bold">Crear usuario FlashFood</h2><button type="button" aria-label="Cerrar" onClick={()=>setCreateOpen(false)}><X size={22}/></button></div>
+          <p className="text-sm text-slate-500">Se enviará una invitación por correo para activar su cuenta. Todos los usuarios pueden realizar pedidos como clientes.</p>
+          <label className="block text-sm font-medium">Nombre completo
+            <input className="mt-1 w-full rounded-xl border p-3" value={createName} onChange={e=>setCreateName(e.target.value)} placeholder="Nombre y apellido" maxLength={150}/>
+          </label>
+          <label className="block text-sm font-medium">Correo electrónico
+            <input type="email" className="mt-1 w-full rounded-xl border p-3" value={createEmail} onChange={e=>setCreateEmail(e.target.value)} placeholder="correo@ejemplo.com"/>
+          </label>
+          <label className="block text-sm font-medium">Rol inicial
+            <select className="mt-1 w-full rounded-xl border p-3" value={createRole} onChange={e=>{setCreateRole(e.target.value);setCreateBusiness('')}}>
+              <option value="cliente">Cliente</option><option value="admin">Administrador de negocio</option><option value="empleado">Empleado</option><option value="delivery">Delivery</option><option value="superadmin">Superadmin</option>
+            </select>
+          </label>
+          {(createRole==='admin'||createRole==='empleado') && <label className="block text-sm font-medium">Negocio asignado
+            <select className="mt-1 w-full rounded-xl border p-3" value={createBusiness} onChange={e=>setCreateBusiness(e.target.value)}>
+              <option value="">Seleccionar negocio</option>{businessChoices.map(b=><option value={b.id} key={b.id}>{b.nombre}</option>)}
+            </select>
+          </label>}
+          {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+          <div className="flex justify-end gap-3"><button type="button" onClick={()=>setCreateOpen(false)} className="rounded-xl border px-5 py-3">Cancelar</button>
+            <button type="button" disabled={saving||createName.trim().length<3||!createEmail.includes('@')||((createRole==='admin'||createRole==='empleado')&&!createBusiness)} onClick={()=>void submitCreateUser()} className="rounded-xl bg-orange-500 px-5 py-3 font-bold text-white disabled:opacity-50">{saving?'Creando…':'Crear y enviar invitación'}</button>
+          </div>
+        </div>
+      </div>}
       {edit && config && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"><div className="mb-5 flex items-center justify-between"><h2 className="text-xl font-bold">{section === 'roles' ? 'Asignar o modificar rol' : `Editar ${config.title.toLowerCase()}`}</h2><button onClick={() => setEdit(null)}><X/></button></div>
         {section === 'roles' ? <div className="space-y-4"><label className="block text-sm">ID de usuario<input className="mt-1 w-full rounded-lg border p-3" value={roleUser} onChange={e => setRoleUser(e.target.value)} placeholder="UUID de Auth"/></label><label className="block text-sm">Rol<input className="mt-1 w-full rounded-lg border p-3" value={roleName} onChange={e => setRoleName(e.target.value)} placeholder="superadmin, admin, delivery..."/></label><label className="flex gap-2"><input type="checkbox" checked={roleActive} onChange={e => setRoleActive(e.target.checked)}/> Rol activo</label></div> : <div className="space-y-4">{Object.entries(config.fields || {}).map(([key, kind]) => {
           const value = changes[key] !== undefined ? changes[key] : (key === 'ban' ? (edit.banned_until != null && new Date(String(edit.banned_until)) > new Date()) : edit[key])

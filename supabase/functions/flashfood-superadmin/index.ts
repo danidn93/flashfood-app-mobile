@@ -174,6 +174,48 @@ Deno.serve(async req => {
       if (error) throw error
       return json({ ok: true, user_id: data.user.id })
     }
+    if (action === 'create_user') {
+      const name=asString(body.name,150)
+      const email=asString(body.email,254).toLowerCase()
+      const role=asString(body.role,30)
+      const businessId=body.business_id
+      if(name.length<3)return fail('Ingresa el nombre completo del usuario')
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return fail('Correo inválido')
+      if(!['cliente','superadmin','admin','empleado','delivery'].includes(role))return fail('Rol inválido')
+      if((role==='admin'||role==='empleado')&&!uuid(businessId))return fail('Selecciona el negocio al que tendrá acceso')
+      if(role==='admin'||role==='empleado'){
+        const {data:business,error:businessError}=await db.from('locales').select('id').eq('id',businessId).maybeSingle()
+        if(businessError)throw businessError
+        if(!business)return fail('Negocio no encontrado',404)
+      }
+      // No duplicar cuentas ya existentes. Para ellas, utilizar Asignar rol por correo.
+      for(let p=1;p<=100;p++){
+        const {data:list,error:listError}=await db.auth.admin.listUsers({page:p,perPage:1000})
+        if(listError)throw listError
+        if(list.users.some(u=>u.email?.toLowerCase()===email))return fail('Ya existe una cuenta con ese correo. Utiliza Asignar rol por correo.',409)
+        if(list.users.length<1000)break
+      }
+      const {data:invitation,error:inviteError}=await db.auth.admin.inviteUserByEmail(email,{data:{full_name:name}})
+      if(inviteError)throw inviteError
+      const userId=invitation.user?.id
+      if(!userId)return fail('No se pudo crear la invitación',500)
+      try {
+        if(role!=='cliente'){
+          const {error:roleError}=await db.from('flashfood_user_roles').insert({user_id:userId,role,active:true})
+          if(roleError)throw roleError
+        }
+        if(role==='admin'||role==='empleado'){
+          const {error:accessError}=await db.from('flashfood_business_access').insert({
+            user_id:userId,business_id:businessId,branch_id:null,role,active:true
+          })
+          if(accessError)throw accessError
+        }
+      }catch(assignError){
+        console.error('Cuenta invitada pero asignación pendiente',userId,assignError)
+        return json({ok:false,error:'La invitación se creó, pero no se pudo asignar el rol. Revisa la tabla de permisos y asigna el rol desde Superadmin → Roles.',user_id:userId,partial:true},500)
+      }
+      return json({ok:true,user_id:userId,email,role,invited:true})
+    }
     if (action === 'set_role_by_email') {
       const email=asString(body.email,255).toLowerCase()
       const role=asString(body.role,60)
