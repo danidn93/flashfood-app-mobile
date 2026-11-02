@@ -1,0 +1,35 @@
+name: Sync Capacitor push dependencies and verify build
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/sync-push-lock.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Resolve push notification dependency and lock file
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Install from updated lock
+        run: npm ci --no-audit --no-fund
+      - name: Verify TypeScript and Vite build
+        run: npm run build
+      - name: Commit package lock to main
+        run: |
+          if ! git diff --quiet -- package-lock.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "build: lock Capacitor push notifications dependency"
+            git push origin HEAD:main
+          fi
