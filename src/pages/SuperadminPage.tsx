@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { assignBusinessRole, loadBusinesses, type Business } from '../services/roles'
 import { AlertCircle, Bike, ClipboardList, CreditCard, LayoutDashboard, RefreshCw, Settings, Store, Users, Search, Menu, X, Save, Pencil, Building2, ShieldCheck, ArrowLeft } from 'lucide-react'
 
 type Section = 'dashboard' | 'restaurants' | 'branches' | 'catalog' | 'orders' | 'drivers' | 'users' | 'roles' | 'availability' | 'settings'
@@ -72,6 +73,10 @@ export default function SuperadminPage() {
   const [previewNight, setPreviewNight] = useState(false)
   const [cardFee, setCardFee] = useState('15')
   const [cardSettingExists, setCardSettingExists] = useState(false)
+  const [roleEmail,setRoleEmail]=useState('')
+  const [roleBusiness,setRoleBusiness]=useState('')
+  const [roleInvite,setRoleInvite]=useState(false)
+  const [businessChoices,setBusinessChoices]=useState<Business[]>([])
   const [roleUser, setRoleUser] = useState('')
   const [roleName, setRoleName] = useState('')
   const [roleActive, setRoleActive] = useState(true)
@@ -149,6 +154,18 @@ export default function SuperadminPage() {
   const previewTotal = delivery.base_fee + previewExtra * delivery.additional_km_fee +
     (previewNight ? delivery.night_fee : 0) + (delivery.rain_enabled ? delivery.rain_fee : 0)
   const openNewRole = () => { setEdit({ id: 'new' }); setChanges({}); setRoleUser(''); setRoleName(''); setRoleActive(true) }
+  const saveRoleByEmail=async()=>{
+    if(!roleEmail.includes('@')||!roleName){setError('Indica correo y rol');return}
+    setSaving(true);setError('');setNotice('')
+    try{
+      if(roleName==='admin'||roleName==='empleado'){
+        if(!roleBusiness)throw new Error('Selecciona un negocio')
+        await assignBusinessRole(roleEmail,roleBusiness,roleName,roleActive,null,roleInvite)
+      }else await invoke('set_role_by_email',{email:roleEmail,role:roleName,active:roleActive,invite:roleInvite})
+      setNotice('Rol asignado a '+roleEmail);await load()
+    }catch(e){setError(e instanceof Error?e.message:'No se pudo asignar')}
+    finally{setSaving(false)}
+  }
   return <div className="h-dvh overflow-hidden bg-slate-50 text-slate-900 lg:flex">
     {sidebar && <button className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setSidebar(false)} aria-label="Cerrar menú" />}
     <aside className={`${sidebar ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-40 flex w-72 flex-col bg-slate-950 p-5 text-white transition-transform lg:sticky lg:top-0 lg:h-screen lg:translate-x-0`}>
@@ -200,6 +217,25 @@ export default function SuperadminPage() {
         <div className="overflow-x-auto"><table className="w-full min-w-[780px] text-left text-sm"><thead className="bg-slate-50"><tr>{config?.columns.map(key => <th key={key} className="px-4 py-3">{labels[key] || key}</th>)}{config?.entity && <th className="px-4 py-3">Acciones</th>}</tr></thead><tbody>{filtered.map((row, index) => <tr key={String(row.id ?? index)} className="border-t">{config?.columns.map(key => <td key={key} className="max-w-64 truncate px-4 py-3" title={show(row[key], key)}>{show(row[key], key)}</td>)}{config?.entity && <td className="px-4 py-3"><button onClick={() => startEdit(row)} className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 font-semibold text-orange-600"><Pencil size={15}/> Editar</button></td>}</tr>)}</tbody></table>{!filtered.length && <p className="p-8 text-center text-slate-500">No hay registros en esta página.</p>}</div>
         <div className="flex justify-end gap-2 border-t p-4"><button disabled={page === 1 || loading} onClick={() => setPage(p => p - 1)} className="rounded-lg border px-4 py-2 disabled:opacity-40">Anterior</button><button disabled={rows.length < 100 || loading} onClick={() => setPage(p => p + 1)} className="rounded-lg border px-4 py-2 disabled:opacity-40">Siguiente</button></div>
       </div>}
+
+      {section==='roles' && <section className="mb-5 rounded-2xl border bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-bold">Asignar rol por correo</h2>
+        <p className="mt-1 text-sm text-slate-500">Las cuentas mantienen su acceso como clientes. El administrador y empleado deben asignarse a un negocio.</p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <input type="email" placeholder="correo@ejemplo.com" className="min-w-52 flex-1 rounded-xl border p-3" value={roleEmail} onChange={e=>setRoleEmail(e.target.value)}/>
+          <select className="rounded-xl border p-3" value={roleName} onChange={e=>{setRoleName(e.target.value);void loadBusinesses().then(r=>setBusinessChoices(r.businesses)).catch(()=>{})}}>
+            <option value="">Seleccionar rol</option><option value="superadmin">Superadmin</option><option value="admin">Administrador de negocio</option><option value="empleado">Empleado</option><option value="delivery">Repartidor</option>
+          </select>
+          {(roleName==='admin'||roleName==='empleado') && <select className="min-w-48 rounded-xl border p-3" value={roleBusiness} onChange={e=>setRoleBusiness(e.target.value)}>
+            <option value="">Seleccionar negocio</option>{businessChoices.map(b=><option key={b.id} value={b.id}>{b.nombre}</option>)}
+          </select>}
+          <button onClick={()=>void saveRoleByEmail()} disabled={saving||!roleEmail.includes('@')||!roleName} className="rounded-xl bg-orange-500 px-5 py-3 font-bold text-white disabled:opacity-50">Guardar rol</button>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-5 text-sm">
+          <label className="flex items-center gap-2"><input type="checkbox" checked={roleActive} onChange={e=>setRoleActive(e.target.checked)}/> Rol activo</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={roleInvite} onChange={e=>setRoleInvite(e.target.checked)}/> Invitar si no existe</label>
+        </div>
+      </section>}
       {edit && config && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"><div className="mb-5 flex items-center justify-between"><h2 className="text-xl font-bold">{section === 'roles' ? 'Asignar o modificar rol' : `Editar ${config.title.toLowerCase()}`}</h2><button onClick={() => setEdit(null)}><X/></button></div>
         {section === 'roles' ? <div className="space-y-4"><label className="block text-sm">ID de usuario<input className="mt-1 w-full rounded-lg border p-3" value={roleUser} onChange={e => setRoleUser(e.target.value)} placeholder="UUID de Auth"/></label><label className="block text-sm">Rol<input className="mt-1 w-full rounded-lg border p-3" value={roleName} onChange={e => setRoleName(e.target.value)} placeholder="superadmin, admin, delivery..."/></label><label className="flex gap-2"><input type="checkbox" checked={roleActive} onChange={e => setRoleActive(e.target.checked)}/> Rol activo</label></div> : <div className="space-y-4">{Object.entries(config.fields || {}).map(([key, kind]) => {
           const value = changes[key] !== undefined ? changes[key] : (key === 'ban' ? Boolean(edit.banned_until && new Date(String(edit.banned_until)) > new Date()) : edit[key])
