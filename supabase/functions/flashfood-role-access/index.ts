@@ -122,5 +122,20 @@ Deno.serve(async req=>{
    return respond({ok:true,driver:data})
   }
   return bad('Acción no soportada',404)
- }catch(e){console.error('flashfood-role-access',e);return bad(e instanceof Error?e.message:'Error de acceso',500)}
+ }catch(e){
+  const detail=e&&typeof e==='object'?e as Record<string,unknown>:{}
+  const code=typeof detail.code==='string'?detail.code:''
+  const message=e instanceof Error?e.message:typeof detail.message==='string'?detail.message:''
+  console.error('flashfood-role-access',{code,message,details:detail.details,hint:detail.hint})
+  if((code==='42P01'||code==='PGRST205'||code==='PGRST116') &&
+     /flashfood_business_access|flashfood_business_settings|flashfood_user_roles/.test(message)){
+    return bad('Falta una tabla de permisos de FlashFood en Supabase. Comprueba que ejecutaste la migración 20261102180000_flashfood_business_access.sql.',503)
+  }
+  if((code==='42P01'||code==='PGRST205') && /flashfood_/.test(message)){
+    return bad('Falta una tabla de FlashFood requerida por esta operación. Revisa las migraciones en Supabase.',503)
+  }
+  if(code==='42501'||code==='PGRST301')return bad('La función no tiene permisos para consultar la base de datos. Revisa SUPABASE_SERVICE_ROLE_KEY.',503)
+  if(message.includes('Invalid API key')||message.includes('invalid JWT'))return bad('Configuración de autenticación inválida en la Edge Function.',503)
+  return bad('Error interno en los permisos de FlashFood. Revisa los logs de la función flashfood-role-access en Supabase.',500)
+ }
 })
