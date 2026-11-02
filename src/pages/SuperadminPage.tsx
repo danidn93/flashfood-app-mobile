@@ -186,7 +186,7 @@ export default function SuperadminPage() {
   }
   return <div className="flashfood-admin-screen overflow-hidden bg-slate-50 text-slate-900 lg:flex">
     {sidebar && <button className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setSidebar(false)} aria-label="Cerrar menú" />}
-    <aside className={`${sidebar ? 'translate-x-0' : '-translate-x-full'} fixed bottom-0 left-0 z-40 flex w-72 flex-col bg-slate-950 p-5 text-white transition-transform lg:sticky lg:top-0 lg:h-full lg:translate-x-0`}>
+    <aside className={`flashfood-admin-sidebar ${sidebar ? 'translate-x-0' : '-translate-x-full'} fixed bottom-0 left-0 z-40 flex w-72 flex-col bg-slate-950 p-5 text-white transition-transform lg:sticky lg:top-0 lg:h-full lg:translate-x-0`}>
       <div className="mb-8 flex items-center gap-3"><img src="/flashfood-logo.png" className="h-14 w-14 rounded-xl object-contain" alt="Logo FlashFood" /><div><div className="text-xl font-extrabold">FlashFood</div><div className="text-sm text-slate-400">Superadministración</div></div></div>
       <nav className="flex-1 space-y-1 overflow-y-auto">{menu.map(item => <button key={item.id} onClick={() => choose(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-semibold ${section === item.id ? 'bg-orange-500 text-white' : 'text-slate-300 hover:bg-slate-800'}`}><item.icon size={19}/>{item.label}</button>)}</nav>
       <button onClick={() => navigate('/perfil')} className="mt-3 flex items-center gap-2 rounded-xl p-3 text-slate-300 hover:bg-slate-800"><ArrowLeft size={18}/> Volver a mi perfil</button>
