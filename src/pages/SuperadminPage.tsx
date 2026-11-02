@@ -184,14 +184,14 @@ export default function SuperadminPage() {
     }catch(e){setError(e instanceof Error?e.message:'No se pudo asignar')}
     finally{setSaving(false)}
   }
-  return <div className="h-dvh overflow-hidden bg-slate-50 text-slate-900 lg:flex">
+  return <div className="flashfood-admin-screen overflow-hidden bg-slate-50 text-slate-900 lg:flex">
     {sidebar && <button className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setSidebar(false)} aria-label="Cerrar menú" />}
-    <aside className={`${sidebar ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-40 flex w-72 flex-col bg-slate-950 p-5 text-white transition-transform lg:sticky lg:top-0 lg:h-screen lg:translate-x-0`}>
+    <aside className={`${sidebar ? 'translate-x-0' : '-translate-x-full'} fixed bottom-0 left-0 z-40 flex w-72 flex-col bg-slate-950 p-5 text-white transition-transform lg:sticky lg:top-0 lg:h-full lg:translate-x-0`}>
       <div className="mb-8 flex items-center gap-3"><img src="/flashfood-logo.png" className="h-14 w-14 rounded-xl object-contain" alt="Logo FlashFood" /><div><div className="text-xl font-extrabold">FlashFood</div><div className="text-sm text-slate-400">Superadministración</div></div></div>
       <nav className="flex-1 space-y-1 overflow-y-auto">{menu.map(item => <button key={item.id} onClick={() => choose(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-semibold ${section === item.id ? 'bg-orange-500 text-white' : 'text-slate-300 hover:bg-slate-800'}`}><item.icon size={19}/>{item.label}</button>)}</nav>
       <button onClick={() => navigate('/perfil')} className="mt-3 flex items-center gap-2 rounded-xl p-3 text-slate-300 hover:bg-slate-800"><ArrowLeft size={18}/> Volver a mi perfil</button>
     </aside>
-    <main className="h-dvh min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-4 md:p-8" style={{ paddingBottom: "calc(10rem + env(safe-area-inset-bottom, 0px))", WebkitOverflowScrolling: "touch" }}>
+    <main className="h-full min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-4 md:p-8" style={{ paddingBottom: "calc(10rem + env(safe-area-inset-bottom, 0px))", WebkitOverflowScrolling: "touch" }}>
       <header className="mb-6 flex items-center justify-between gap-3"><div className="flex items-center gap-3"><button className="rounded-xl bg-white p-3 shadow lg:hidden" onClick={() => setSidebar(true)} aria-label="Abrir menú"><Menu/></button><div><p className="text-sm text-slate-500">Panel global</p><h1 className="text-2xl font-extrabold">{menu.find(x => x.id === section)?.label}</h1></div></div><button onClick={() => void load()} disabled={loading} className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 text-sm font-semibold disabled:opacity-50"><RefreshCw size={16} className={loading ? 'animate-spin' : ''}/> Actualizar</button></header>
       {error && <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><AlertCircle size={18}/>{error}</div>}
       {notice && <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">{notice}</div>}
