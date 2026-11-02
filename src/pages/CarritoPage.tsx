@@ -172,6 +172,7 @@ export default function CarritoPage() {
   useEffect(() => suscribirseAlCarrito(() => setCarrito(obtenerCarrito())), [])
 
   const esDelivery = carrito?.modalidad === 'domicilio'
+  /* eslint-disable react-hooks/set-state-in-effect -- La modalidad de pago debe sincronizarse al cambiar entrega. */
   useEffect(() => {
     if (esDelivery) {
       setMetodoPago(actual => actual === 'local' ? 'efectivo' : actual)
