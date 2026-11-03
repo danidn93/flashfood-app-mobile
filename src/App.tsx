@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { PushNotifications } from '@capacitor/push-notifications'
 import { supabase } from './lib/supabase'
+import { rememberPushToken } from './services/pushDevice'
 import {
   obtenerCarrito,
   obtenerTiempoRestanteCarrito,
@@ -78,6 +79,7 @@ function AppLayout() {
       if (!active) return
       console.info('[FlashFood Push] Registro correcto, token recibido:', token.value.slice(0, 12) + '…')
       nativeToken = token.value
+      rememberPushToken(token.value)
       void saveTokenForSignedInUser(token.value)
     })
 
