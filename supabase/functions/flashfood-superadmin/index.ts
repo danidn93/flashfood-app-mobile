@@ -221,9 +221,9 @@ Deno.serve(async req => {
         const title = campaign.title as string
         const message = campaign.message as string
         const b64url = (value: Uint8Array) => btoa(String.fromCharCode(...value))
-          .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/g, '')
+          .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
         const encode = (value: unknown) => b64url(new TextEncoder().encode(JSON.stringify(value)))
-        const pkcs8 = (pem: string) => Uint8Array.from(atob(pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\\s/g, '')), c => c.charCodeAt(0))
+        const pkcs8 = (pem: string) => Uint8Array.from(atob(pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, '')), c => c.charCodeAt(0))
         let googleAccessToken = ''
         let googleProjectId = ''
         if (androidDevices.length && serviceAccountText) {
@@ -249,7 +249,7 @@ Deno.serve(async req => {
         let apnsJwt = ''
         const bundleId = Deno.env.get('FLASHFOOD_APNS_BUNDLE_ID') || 'com.flashfood.mobile'
         if (iosDevices.length && appleKeyText) {
-          const key = await crypto.subtle.importKey('pkcs8', pkcs8(appleKeyText.replace(/\\n/g, '\\n')),
+          const key = await crypto.subtle.importKey('pkcs8', pkcs8(appleKeyText.replace(/\\n/g, '\n')),
             { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign'])
           const now = Math.floor(Date.now() / 1000)
           const jwtInput = encode({ alg: 'ES256', kid: Deno.env.get('FLASHFOOD_APNS_KEY_ID') })
