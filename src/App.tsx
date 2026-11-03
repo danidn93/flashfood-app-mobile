@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { PushNotifications } from '@capacitor/push-notifications'
+import { supabase } from './lib/supabase'
 import {
   obtenerCarrito,
   obtenerTiempoRestanteCarrito,
@@ -50,12 +51,34 @@ function AppLayout() {
     if (!Capacitor.isNativePlatform()) return
 
     let active = true
+    let nativeToken: string | null = null
+
+    const saveTokenForSignedInUser = async (tokenValue: string) => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!active || !user) return
+      const platform = Capacitor.getPlatform()
+      if (platform !== 'ios' && platform !== 'android') return
+      const { error } = await supabase.from('flashfood_push_devices').upsert({
+        user_id: user.id, token: tokenValue, platform, active: true,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'token' })
+      if (error && active) console.error('[FlashFood Push] No se pudo registrar dispositivo:', error.message)
+    }
+
+    // Register the native token after login and token rotations. Do not log full tokens.
+    const authSubscription = supabase.auth.onAuthStateChange((event) => {
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') && nativeToken) {
+        // Never await Supabase queries from inside its auth change callback.
+        queueMicrotask(() => { if (active && nativeToken) void saveTokenForSignedInUser(nativeToken) })
+      }
+    })
 
     // Register listeners before calling register(): native callbacks may arrive quickly.
     const registration = PushNotifications.addListener('registration', (token) => {
       if (!active) return
       console.info('[FlashFood Push] Registro correcto, token recibido:', token.value.slice(0, 12) + '…')
-      // The full token will be persisted securely after the Supabase device registry is ready.
+      nativeToken = token.value
+      void saveTokenForSignedInUser(token.value)
     })
 
     const registrationError = PushNotifications.addListener('registrationError', (error) => {
@@ -100,6 +123,7 @@ function AppLayout() {
 
     return () => {
       active = false
+      authSubscription.data.subscription.unsubscribe()
       void Promise.all([registration, registrationError, received, action])
         .then((listeners) => Promise.all(listeners.map((listener) => listener.remove())))
         .catch((error: unknown) => console.error('[FlashFood Push] Error liberando listeners:', error))
