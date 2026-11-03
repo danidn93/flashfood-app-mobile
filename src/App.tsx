@@ -70,7 +70,7 @@ function AppLayout() {
     const authSubscription = supabase.auth.onAuthStateChange((event) => {
       if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') && nativeToken) {
         // Never await Supabase queries from inside its auth change callback.
-        queueMicrotask(() => { if (active && nativeToken) void saveTokenForSignedInUser(nativeToken) })
+        setTimeout(() => { if (active && nativeToken) void saveTokenForSignedInUser(nativeToken) }, 0)
       }
     })
 
