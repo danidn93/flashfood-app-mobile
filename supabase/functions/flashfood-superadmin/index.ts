@@ -130,6 +130,181 @@ Deno.serve(async req => {
     }
     if (action === 'roles') return json({ ok: true, rows: checked(await paged('flashfood_user_roles')) })
 
+
+    // Push campaigns are visible and mutable only via this superadmin-authenticated function.
+    if (action === 'notifications') {
+      const [campaigns, deviceCount] = await Promise.all([
+        db.from('flashfood_push_campaigns').select('id,title,message,audience,status,created_at,sent_at,sent_count,failed_count,error_message').order('created_at', { ascending: false }).range((page - 1) * pageSize, page * pageSize - 1),
+        db.from('flashfood_push_devices').select('id', { count: 'exact', head: true }).eq('active', true),
+      ])
+      if (campaigns.error) throw campaigns.error
+      if (deviceCount.error) throw deviceCount.error
+      return json({ ok: true, rows: campaigns.data || [], devices: deviceCount.count ?? 0 })
+    }
+
+    if (action === 'notification_create') {
+      const title = asString(body.title, 101)
+      const message = asString(body.message, 501)
+      const audience = asString(body.audience, 16)
+      if (title.length < 3 || title.length > 100 || message.length < 3 || message.length > 500)
+        return fail('El título debe tener 3–100 caracteres y el mensaje 3–500 caracteres')
+      if (!['all', 'customer', 'merchant', 'driver'].includes(audience)) return fail('Destinatarios inválidos')
+      const { data, error } = await db.from('flashfood_push_campaigns').insert({
+        title, message, audience, status: 'draft', created_by: identity.user.id,
+      }).select('id,title,message,audience,status,created_at').single()
+      if (error) throw error
+      return json({ ok: true, row: data })
+    }
+
+    if (action === 'notification_send') {
+      if (!uuid(id)) return fail('Campaña inválida')
+      const { data: campaign, error: campaignError } = await db.from('flashfood_push_campaigns')
+        .select('id,title,message,audience,status').eq('id', id).maybeSingle()
+      if (campaignError) throw campaignError
+      if (!campaign) return fail('Campaña no encontrada', 404)
+      if (campaign.status !== 'draft') return fail('Esta campaña ya fue procesada', 409)
+
+      // Filter recipients on the SERVER. Frontend-selected audiences are never trusted.
+      const selectedRoles: string[] = campaign.audience === 'driver' ? ['delivery']
+        : campaign.audience === 'merchant' ? ['admin', 'empleado']
+        : []
+      let allowedUsers: Set<string> | null = null
+      if (selectedRoles.length) {
+        const { data: roleRows, error: roleError2 } = await db.from('flashfood_user_roles')
+          .select('user_id').in('role', selectedRoles).eq('active', true).limit(10000)
+        if (roleError2) throw roleError2
+        allowedUsers = new Set((roleRows || []).map(r => r.user_id))
+      }
+
+      // Never silently truncate a broadcast. A scheduled worker is needed above this cap.
+      const { data: allDevices, error: devicesError } = await db.from('flashfood_push_devices')
+        .select('id,user_id,token,platform').eq('active', true).limit(1001)
+      if (devicesError) throw devicesError
+      if ((allDevices || []).length > 1000) return fail('Hay más de 1.000 dispositivos. Configura el despachador por lotes antes del envío masivo.', 409)
+      const devices = (allDevices || []).filter(device => {
+        if (campaign.audience === 'all') return true
+        if (campaign.audience === 'customer') return !!device.user_id
+          && (!allowedUsers || !allowedUsers.has(device.user_id))
+        return !!device.user_id && allowedUsers?.has(device.user_id)
+      })
+      // Customers exclude privileged roles, not only merchant/driver roles.
+      if (campaign.audience === 'customer') {
+        const { data: privileged, error: privilegedError } = await db.from('flashfood_user_roles')
+          .select('user_id').in('role', ['superadmin', 'admin', 'empleado', 'delivery']).eq('active', true).limit(10000)
+        if (privilegedError) throw privilegedError
+        const privilegedIds = new Set((privileged || []).map(r => r.user_id))
+        for (let i = devices.length - 1; i >= 0; i--) if (privilegedIds.has(devices[i].user_id)) devices.splice(i, 1)
+      }
+      if (!devices.length) return fail('No existen dispositivos activos para el grupo seleccionado.', 409)
+      // This synchronous action is suitable for small/medium campaigns only.
+      if (devices.length > 100) return fail('La campaña supera 100 dispositivos; se requiere envío por lotes para evitar vencimientos.', 409)
+
+      const androidDevices = devices.filter(d => d.platform === 'android')
+      const iosDevices = devices.filter(d => d.platform === 'ios')
+      const serviceAccountText = Deno.env.get('FLASHFOOD_FIREBASE_SERVICE_ACCOUNT')
+      const appleKeyText = Deno.env.get('FLASHFOOD_APNS_PRIVATE_KEY')
+      if (androidDevices.length && !serviceAccountText)
+        return fail('Configura FLASHFOOD_FIREBASE_SERVICE_ACCOUNT en los secretos de Supabase.', 503)
+      if (iosDevices.length && (!appleKeyText || !Deno.env.get('FLASHFOOD_APNS_TEAM_ID') || !Deno.env.get('FLASHFOOD_APNS_KEY_ID')))
+        return fail('Configura la clave APNs, Team ID y Key ID en los secretos de Supabase.', 503)
+
+      // Atomic claim prevents parallel clicks from dispatching the same campaign twice.
+      const { data: claimed, error: claimError } = await db.from('flashfood_push_campaigns')
+        .update({ status: 'sending' }).eq('id', campaign.id).eq('status', 'draft').select('id').maybeSingle()
+      if (claimError) throw claimError
+      if (!claimed) return fail('Esta campaña ya está siendo enviada', 409)
+
+      let accepted = 0
+      let rejected = 0
+      let lastError = ''
+      try {
+        const title = campaign.title as string
+        const message = campaign.message as string
+        const b64url = (value: Uint8Array) => btoa(String.fromCharCode(...value))
+          .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/g, '')
+        const encode = (value: unknown) => b64url(new TextEncoder().encode(JSON.stringify(value)))
+        const pkcs8 = (pem: string) => Uint8Array.from(atob(pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\\s/g, '')), c => c.charCodeAt(0))
+        let googleAccessToken = ''
+        let googleProjectId = ''
+        if (androidDevices.length && serviceAccountText) {
+          const account = JSON.parse(serviceAccountText) as Record<string, string>
+          if (!account.client_email || !account.private_key || !account.project_id) throw new Error('Cuenta de servicio Firebase incompleta')
+          googleProjectId = account.project_id
+          const key = await crypto.subtle.importKey('pkcs8', pkcs8(account.private_key), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign'])
+          const now = Math.floor(Date.now() / 1000)
+          const jwtInput = encode({ alg: 'RS256', typ: 'JWT' }) + '.' + encode({
+            iss: account.client_email, scope: 'https://www.googleapis.com/auth/firebase.messaging',
+            aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600,
+          })
+          const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(jwtInput))
+          const assertion = jwtInput + '.' + b64url(new Uint8Array(signature))
+          const oauth = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
+          })
+          const oauthBody = await oauth.json()
+          if (!oauth.ok || !oauthBody.access_token) throw new Error('No se pudo autorizar Firebase HTTP v1')
+          googleAccessToken = oauthBody.access_token
+        }
+        let apnsJwt = ''
+        const bundleId = Deno.env.get('FLASHFOOD_APNS_BUNDLE_ID') || 'com.flashfood.mobile'
+        if (iosDevices.length && appleKeyText) {
+          const key = await crypto.subtle.importKey('pkcs8', pkcs8(appleKeyText.replace(/\\n/g, '\\n')),
+            { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign'])
+          const now = Math.floor(Date.now() / 1000)
+          const jwtInput = encode({ alg: 'ES256', kid: Deno.env.get('FLASHFOOD_APNS_KEY_ID') })
+            + '.' + encode({ iss: Deno.env.get('FLASHFOOD_APNS_TEAM_ID'), iat: now })
+          const signature = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(jwtInput))
+          apnsJwt = jwtInput + '.' + b64url(new Uint8Array(signature))
+        }
+        const apnsHost = Deno.env.get('FLASHFOOD_APNS_ENVIRONMENT') === 'production'
+          ? 'https://api.push.apple.com' : 'https://api.sandbox.push.apple.com'
+        for (const device of devices) {
+          try {
+            let response: Response
+            if (device.platform === 'android') {
+              response = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(googleProjectId)}/messages:send`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${googleAccessToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: { token: device.token, notification: { title, body: message },
+                  data: { type: 'campaign', campaign_id: String(campaign.id) } } }),
+              })
+            } else {
+              response = await fetch(`${apnsHost}/3/device/${encodeURIComponent(device.token)}`, {
+                method: 'POST',
+                headers: { authorization: `bearer ${apnsJwt}`, 'apns-topic': bundleId, 'apns-push-type': 'alert', 'apns-priority': '10', 'content-type': 'application/json' },
+                body: JSON.stringify({ aps: { alert: { title, body: message }, sound: 'default' }, campaign_id: campaign.id }),
+              })
+            }
+            if (response.ok) accepted++
+            else {
+              rejected++
+              const content = await response.text()
+              lastError = `Error proveedor HTTP ${response.status}: ${content.slice(0, 180)}`
+              if (response.status === 404 || response.status === 410) await db.from('flashfood_push_devices').update({ active: false }).eq('id', device.id)
+            }
+          } catch (sendError) {
+            rejected++
+            lastError = sendError instanceof Error ? sendError.message : 'Error de red'
+          }
+        }
+        const status = rejected ? (accepted ? 'partial' : 'failed') : 'sent'
+        const { error: saveError } = await db.from('flashfood_push_campaigns').update({
+          status, sent_at: new Date().toISOString(), sent_count: accepted, failed_count: rejected,
+          error_message: lastError || null,
+        }).eq('id', campaign.id)
+        if (saveError) throw saveError
+        return json({ ok: true, sent: accepted, failed: rejected, status })
+      } catch (dispatchError) {
+        const message2 = dispatchError instanceof Error ? dispatchError.message : 'No se pudo despachar'
+        await db.from('flashfood_push_campaigns').update({
+          status: 'failed', sent_at: new Date().toISOString(), sent_count: accepted,
+          failed_count: rejected, error_message: message2.slice(0, 500),
+        }).eq('id', campaign.id)
+        throw dispatchError
+      }
+    }
+
     // Explicitly allowlisted updates. Never accept arbitrary table names or columns from the browser.
     const editable: Record<string, { table: string; fields: Record<string, 'text' | 'bool' | 'number' | 'json'> }> = {
       restaurant: { table: 'locales', fields: { nombre: 'text', nombre_comercial: 'text', activo: 'bool' } },
