@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { getCurrentPushToken, forgetPushToken } from './pushDevice'
 
 export async function registrarConCorreo(
   nombre: string,
@@ -55,13 +56,15 @@ export async function cerrarSesion() {
   const { data: sessionData } = await supabase.auth.getSession()
   if (sessionData.session) {
     const platform = (await import('@capacitor/core')).Capacitor.getPlatform()
-    if (platform === 'android' || platform === 'ios') {
+    const token = getCurrentPushToken()
+    if ((platform === 'android' || platform === 'ios') && token) {
       const { error: revokeError } = await supabase.from('flashfood_push_devices')
-        .delete().eq('user_id', sessionData.session.user.id).eq('platform', platform)
+        .delete().eq('user_id', sessionData.session.user.id).eq('platform', platform).eq('token', token)
       if (revokeError) throw new Error(`No se pudo desvincular el dispositivo push: ${revokeError.message}`)
     }
   }
   const { error } = await supabase.auth.signOut()
 
   if (error) throw error
+  forgetPushToken()
 }
