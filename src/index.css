@@ -121,3 +121,19 @@ video {
     top: 0;
   }
 }
+
+
+/*
+ * iOS Safari / WKWebView zooms the viewport when focusing form controls
+ * whose computed font-size is smaller than 16px. Keep inputs >= 16px on
+ * phones, even when Tailwind utilities such as text-sm are used.
+ * Preserve native pinch zoom and accessibility scaling.
+ */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select,
+  [contenteditable="true"] {
+    font-size: 16px !important;
+  }
+}
