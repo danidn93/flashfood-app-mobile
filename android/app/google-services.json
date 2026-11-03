@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "65465745881",
+    "project_id": "flashfood-mobile-ac40b",
+    "storage_bucket": "flashfood-mobile-ac40b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:65465745881:android:e63e94f905bcc8538419c8",
+        "android_client_info": {
+          "package_name": "com.flashfood.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCMJZgAavMd_83Y_IHB7kV7qQsPuoElBek"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
