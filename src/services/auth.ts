@@ -51,6 +51,16 @@ export async function obtenerSesion() {
 }
 
 export async function cerrarSesion() {
+  // Explicit logout must stop future campaigns for this device, unlike passive session expiry.
+  const { data: sessionData } = await supabase.auth.getSession()
+  if (sessionData.session) {
+    const platform = (await import('@capacitor/core')).Capacitor.getPlatform()
+    if (platform === 'android' || platform === 'ios') {
+      const { error: revokeError } = await supabase.from('flashfood_push_devices')
+        .delete().eq('user_id', sessionData.session.user.id).eq('platform', platform)
+      if (revokeError) throw new Error(`No se pudo desvincular el dispositivo push: ${revokeError.message}`)
+    }
+  }
   const { error } = await supabase.auth.signOut()
 
   if (error) throw error
