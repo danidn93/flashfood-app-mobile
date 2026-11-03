@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { assignBusinessRole, loadBusinesses, type Business } from '../services/roles'
-import { AlertCircle, Bike, ClipboardList, CreditCard, LayoutDashboard, RefreshCw, Settings, Store, Users, Search, Menu, X, Save, Pencil, Building2, ShieldCheck, ArrowLeft } from 'lucide-react'
+import { AlertCircle, Bike, ClipboardList, CreditCard, LayoutDashboard, RefreshCw, Settings, Store, Users, Search, Menu, X, Save, Pencil, Building2, ShieldCheck, ArrowLeft, BellRing, Send } from 'lucide-react'
 
-type Section = 'dashboard' | 'restaurants' | 'branches' | 'catalog' | 'orders' | 'drivers' | 'users' | 'roles' | 'availability' | 'settings'
+type Section = 'dashboard' | 'restaurants' | 'branches' | 'catalog' | 'orders' | 'drivers' | 'users' | 'roles' | 'availability' | 'settings' | 'notifications'
 type Row = Record<string, unknown>
 type DeliveryConfig = {
   base_fee: number
@@ -30,6 +30,7 @@ const menu = [
   { id: 'orders', label: 'Pedidos', icon: ClipboardList },
   { id: 'drivers', label: 'Repartidores', icon: Bike },
   { id: 'users', label: 'Usuarios', icon: Users },
+  { id: 'notifications', label: 'Notificaciones', icon: BellRing },
   { id: 'roles', label: 'Roles', icon: ShieldCheck },
   { id: 'settings', label: 'Configuración', icon: Settings },
 ] as const
@@ -42,6 +43,7 @@ const configs: Partial<Record<Section, { title: string; columns: string[]; entit
   drivers: { title: 'Repartidores', columns: ['full_name', 'phone', 'availability', 'verified', 'active'], entity: 'driver', fields: { full_name: 'text', phone: 'text', availability: 'text', verified: 'bool', active: 'bool' } },
   users: { title: 'Cuentas de usuarios', columns: ['name', 'email', 'phone', 'banned_until', 'id'], entity: 'user', fields: { name: 'text', phone: 'text', ban: 'bool' } },
   roles: { title: 'Roles asignados', columns: ['user_id', 'role', 'active', 'created_at'], entity: 'role' },
+  notifications: { title: 'Campañas push', columns: ['title', 'audience', 'status', 'created_at'] },
   settings: { title: 'Configuración global', columns: ['key', 'value', 'updated_at'], entity: 'setting', fields: { value: 'json' } },
 }
 const labels: Record<string, string> = { nombre: 'Nombre', nombre_comercial: 'Nombre comercial', activo: 'Activo', direccion: 'Dirección', telefono: 'Teléfono', full_name: 'Nombre completo', phone: 'Teléfono', name: 'Nombre', email: 'Correo', active: 'Activo', verified: 'Verificado', availability: 'Disponibilidad', marketplace_enabled: 'Visible en marketplace', accepting_orders: 'Acepta pedidos', role: 'Rol', user_id: 'ID de usuario', order_number: 'Pedido', status: 'Estado', payment_status: 'Pago', grand_total: 'Total', created_at: 'Fecha', banned_until: 'Suspensión', source_business_id: 'Restaurante ID', source_branch_id: 'Sucursal ID', key: 'Clave', value: 'Valor', updated_at: 'Actualización', id: 'ID', ban: 'Suspender cuenta' }
@@ -85,6 +87,12 @@ export default function SuperadminPage() {
   const [roleUser, setRoleUser] = useState('')
   const [roleName, setRoleName] = useState('')
   const [roleActive, setRoleActive] = useState(true)
+  const [pushTitle, setPushTitle] = useState('')
+  const [pushMessage, setPushMessage] = useState('')
+  const [pushAudience, setPushAudience] = useState('all')
+  const [pushDevices, setPushDevices] = useState(0)
+  const [pushConfirm, setPushConfirm] = useState<string | null>(null)
+
   const invoke = useCallback(async (action: string, args: Row = {}) => {
     const { data, error: callError } = await supabase.functions.invoke('flashfood-superadmin', { body: { action, ...args } })
     if (callError) throw new Error(callError.message)
@@ -96,6 +104,10 @@ export default function SuperadminPage() {
     try {
       const result = await invoke(section, { page })
       if (section === 'dashboard') setDashboard(result.dashboard as Dashboard)
+      else if (section === 'notifications') {
+        setRows(Array.isArray(result.rows) ? result.rows : [])
+        setPushDevices(Number(result.devices || 0))
+      }
       else if (section === 'settings') {
         const found = (result.rows as Row[] || []).find(r => r.key === 'card_surcharge_percent')
         setCardSettingExists(Boolean(found))
@@ -184,6 +196,30 @@ export default function SuperadminPage() {
     }catch(e){setError(e instanceof Error?e.message:'No se pudo asignar')}
     finally{setSaving(false)}
   }
+  const createPushCampaign = async () => {
+    if (pushTitle.trim().length < 3 || pushMessage.trim().length < 3) {
+      setError('Indica un título y un mensaje de al menos 3 caracteres.')
+      return
+    }
+    setSaving(true); setError(''); setNotice('')
+    try {
+      await invoke('notification_create', { title: pushTitle.trim(), message: pushMessage.trim(), audience: pushAudience })
+      setPushTitle(''); setPushMessage('')
+      setNotice('Campaña guardada como borrador.')
+      await load()
+    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo guardar la campaña') }
+    finally { setSaving(false) }
+  }
+  const sendPushCampaign = async (campaignId: string) => {
+    setSaving(true); setError(''); setNotice('')
+    try {
+      const result = await invoke('notification_send', { id: campaignId })
+      setNotice(`Envío procesado: ${result.sent || 0} aceptadas por el servicio push, ${result.failed || 0} fallidas.`)
+      setPushConfirm(null)
+      await load()
+    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo enviar la campaña') }
+    finally { setSaving(false) }
+  }
   return <div className="flashfood-admin-screen overflow-hidden bg-slate-50 text-slate-900 lg:flex">
     {sidebar && <button className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setSidebar(false)} aria-label="Cerrar menú" />}
     <aside className={`flashfood-admin-sidebar ${sidebar ? 'translate-x-0' : '-translate-x-full'} fixed bottom-0 left-0 z-40 flex w-72 flex-col bg-slate-950 p-5 text-white transition-transform lg:sticky lg:top-0 lg:h-full lg:translate-x-0`}>
@@ -195,7 +231,50 @@ export default function SuperadminPage() {
       <header className="mb-6 flex items-center justify-between gap-3"><div className="flex items-center gap-3"><button className="rounded-xl bg-white p-3 shadow lg:hidden" onClick={() => setSidebar(true)} aria-label="Abrir menú"><Menu/></button><div><p className="text-sm text-slate-500">Panel global</p><h1 className="text-2xl font-extrabold">{menu.find(x => x.id === section)?.label}</h1></div></div><button onClick={() => void load()} disabled={loading} className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 text-sm font-semibold disabled:opacity-50"><RefreshCw size={16} className={loading ? 'animate-spin' : ''}/> Actualizar</button></header>
       {error && <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><AlertCircle size={18}/>{error}</div>}
       {notice && <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">{notice}</div>}
-      {section === 'settings' ? <div className="space-y-6">
+      {section === 'notifications' ? <div className="space-y-6">
+        <section className="rounded-2xl border bg-white p-5 shadow-sm space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><h2 className="text-lg font-bold">Crear notificación</h2><p className="mt-1 text-sm text-slate-500">Primero guarda un borrador. Los envíos solo se realizan cuando existen dispositivos registrados y el servidor está configurado.</p></div>
+            <span className="rounded-xl bg-orange-50 px-3 py-2 text-xs font-bold text-orange-700">Dispositivos activos: {pushDevices}</span>
+          </div>
+          <label className="block text-sm font-semibold">Título (3–100 caracteres)
+            <input maxLength={100} value={pushTitle} onChange={e => setPushTitle(e.target.value)} placeholder="Ej. ¡Novedades en FlashFood!" className="mt-2 block w-full rounded-xl border p-3 font-normal" />
+          </label>
+          <label className="block text-sm font-semibold">Mensaje (3–500 caracteres)
+            <textarea rows={4} maxLength={500} value={pushMessage} onChange={e => setPushMessage(e.target.value)} placeholder="Escribe el mensaje para tus usuarios..." className="mt-2 block w-full rounded-xl border p-3 font-normal" />
+          </label>
+          <label className="block text-sm font-semibold">Destinatarios
+            <select value={pushAudience} onChange={e => setPushAudience(e.target.value)} className="mt-2 block w-full rounded-xl border p-3 font-normal">
+              <option value="all">Todos los usuarios</option>
+              <option value="customer">Clientes</option>
+              <option value="merchant">Administradores de negocios</option>
+              <option value="driver">Repartidores</option>
+            </select>
+          </label>
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="text-xs font-bold text-slate-500">Vista previa</p>
+            <p className="mt-2 font-bold">{pushTitle || 'Título de la notificación'}</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{pushMessage || 'El mensaje aparecerá aquí.'}</p>
+          </div>
+          <button type="button" disabled={saving || pushTitle.trim().length < 3 || pushMessage.trim().length < 3} onClick={() => void createPushCampaign()} className="rounded-xl bg-orange-500 px-5 py-3 font-bold text-white disabled:opacity-50">Guardar borrador</button>
+        </section>
+        <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+          <h2 className="border-b p-5 font-bold">Historial de campañas</h2>
+          {!rows.length ? <p className="p-5 text-sm text-slate-500">Aún no existen campañas registradas.</p> : <div className="divide-y">{rows.map((campaign, i) => (
+            <div key={String(campaign.id || i)} className="flex flex-wrap items-start justify-between gap-4 p-5">
+              <div className="min-w-0 flex-1">
+                <p className="font-bold">{String(campaign.title || '')}</p>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{String(campaign.message || '')}</p>
+                <p className="mt-2 text-xs text-slate-500">Destino: {String(campaign.audience)} · Estado: {String(campaign.status)} · {new Date(String(campaign.created_at)).toLocaleString('es-EC')}</p>
+                {campaign.status === 'sent' && <p className="mt-1 text-xs text-slate-500">Aceptadas: {String(campaign.sent_count || 0)} · Fallidas: {String(campaign.failed_count || 0)}</p>}
+              </div>
+              {campaign.status === 'draft' && (pushConfirm === campaign.id ?
+                <div className="flex flex-col gap-2"><span className="text-xs font-semibold text-red-700">¿Enviar ahora a destinatarios reales?</span><div className="flex gap-2"><button disabled={saving} onClick={() => void sendPushCampaign(String(campaign.id))} className="rounded-lg bg-orange-500 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">Confirmar</button><button onClick={() => setPushConfirm(null)} className="rounded-lg border px-3 py-2 text-sm">Cancelar</button></div></div> :
+                <button disabled={saving || pushDevices === 0} onClick={() => setPushConfirm(String(campaign.id))} className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"><Send size={16}/> Enviar</button>)}
+            </div>
+          ))}</div>}
+        </section>
+      </div> : section === 'settings' ? <div className="space-y-6">
         <section className="rounded-2xl border bg-white p-5 shadow-sm"><h2 className="text-lg font-bold">Recargo por pago con tarjeta</h2><p className="mt-1 text-sm text-slate-500">Porcentaje aplicado al pago con tarjeta. No se aplica a efectivo ni transferencia. Límite configurable: 25 %.</p><div className="mt-4 flex flex-wrap items-end gap-3"><label className="text-sm font-medium">Porcentaje (%)<input type="number" min="0" max="25" step="0.01" className="mt-1 block w-40 rounded-xl border p-3" value={cardFee} onChange={e => setCardFee(e.target.value)}/></label><button disabled={saving} onClick={() => void saveCardFee()} className="rounded-xl bg-orange-500 px-5 py-3 font-bold text-white disabled:opacity-50">Guardar recargo</button></div><p className="mt-2 text-xs text-slate-500">{cardSettingExists ? 'Configuración existente' : 'Aún no se ha guardado esta configuración'}. El checkout debe consultar esta clave para aplicarla.</p></section>
         <section className="rounded-2xl border bg-white p-5 shadow-sm space-y-5">
           <div><h2 className="text-lg font-bold">Tarifa global de delivery</h2><p className="mt-1 text-sm text-slate-500">Se aplica a todos los restaurantes. El envío se calcula según los kilómetros de recorrido desde la sucursal hasta el cliente, más los recargos aplicables.</p></div>
