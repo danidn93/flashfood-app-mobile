@@ -118,7 +118,7 @@ Deno.serve(async req => {
       }
       if (typeof tariff.rain_enabled !== 'boolean') return fail('Estado de lluvia inválido')
       for (const field of ['night_start', 'night_end']) {
-        if (typeof tariff[field] !== 'string' || !/^([01]\\d|2[0-3]):[0-5]\\d$/.test(tariff[field] as string)) return fail('Horario inválido: ' + field)
+        if (typeof tariff[field] !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(tariff[field] as string)) return fail('Horario inválido: ' + field)
       }
       const payload = Object.fromEntries([...fields, 'rain_enabled', 'night_start', 'night_end'].map(key => [key, tariff[key]]))
       const { data, error } = await db.from('flashfood_global_settings').upsert({
