@@ -390,7 +390,7 @@ Deno.serve(async req => {
       }
       if (!targetId) {
         if (!invite) return fail('No existe esa cuenta. Activa la opción Invitar si no existe.', 404)
-        const appUrl = Deno.env.get('FLASHFOOD_APP_URL')?.trim().replace(/\\/$/, '')
+        const appUrl = Deno.env.get('FLASHFOOD_APP_URL')?.trim().replace(/\/$/, '')
         if (!appUrl || !appUrl.startsWith('https://')) return fail('Configura FLASHFOOD_APP_URL.', 503)
         const { data, error } = await db.auth.admin.inviteUserByEmail(email, {
           data: { full_name: name }, redirectTo: appUrl + '/establecer-contrasena',
