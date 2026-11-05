@@ -115,6 +115,19 @@ Deno.serve(async req=>{
    if(error)throw error
    return respond({ok:true})
   }
+  if(action==='driver_set_availability'){
+   if(!activeRoles.includes('delivery'))return bad('Requiere rol de repartidor activo',403)
+   const target=body.availability
+   if(target!=='available'&&target!=='offline')return bad('Disponibilidad inválida')
+   const {data:driver,error:readError}=await db.from('flashfood_drivers').select('id,active,verified,availability').eq('auth_user_id',caller).maybeSingle()
+   if(readError)throw readError
+   if(!driver)return bad('No existe perfil vinculado a tu cuenta',404)
+   if(target==='available'&&(!driver.active||!driver.verified))return bad('El Superadmin debe activar y verificar tu perfil antes de conectarte',403)
+   if(driver.availability==='busy'&&target==='available')return bad('No puedes conectarte mientras tienes una entrega en curso',409)
+   const {data,error}=await db.from('flashfood_drivers').update({availability:target,updated_at:new Date().toISOString()}).eq('id',driver.id).select('id,active,verified,availability,full_name,phone,vehicle_type').single()
+   if(error)throw error
+   return respond({ok:true,driver:data})
+  }
   if(action==='driver_profile'){
    if(!superadmin&&!activeRoles.includes('delivery'))return bad('No autorizado',403)
    const {data,error}=await db.from('flashfood_drivers').select('*').eq('auth_user_id',caller).maybeSingle()
