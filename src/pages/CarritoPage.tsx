@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../lib/supabase'
+import { direccionSeleccionada, observarDireccion } from '../services/direcciones'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ArrowRight, Bike, Check, ChevronRight,
@@ -173,6 +174,17 @@ export default function CarritoPage() {
   const [costoEnvio] = useState<number | null>(null)
 
   useEffect(() => suscribirseAlCarrito(() => setCarrito(obtenerCarrito())), [])
+  useEffect(() => {
+    let active = true
+    const refresh = () => { void direccionSeleccionada().then(d => {
+      if (!active || !d) return
+      setDireccion(`${d.address_line}, ${d.city}`)
+      setReferencia(d.reference || '')
+    }).catch(()=>{}) }
+    refresh()
+    const remove = observarDireccion(refresh)
+    return () => { active = false; remove() }
+  }, [])
   useEffect(() => {
     let active = true
     const refresh = async () => {
@@ -367,7 +379,7 @@ export default function CarritoPage() {
               {esDelivery && (
                 <FilaEditable icono={<MapPin size={23} />} titulo="Dirección de entrega"
                   valor={direccion ? (referencia ? `${direccion} · ${referencia}` : direccion) : 'Seleccionar dirección de entrega'}
-                  placeholder={!direccion} onClick={() => setModal('direccion')} />
+                  placeholder={!direccion} onClick={() => navigate('/mis-direcciones')} />
               )}
               <FilaEditable icono={metodoPago === 'tarjeta' ? <CreditCard size={23} /> : metodoPago === 'transferencia' ? <Landmark size={23} /> : <Wallet size={23} />}
                 titulo="Método de pago" valor={tituloMetodo(metodoPago)} onClick={() => { if (esDelivery) setModal('pago') }} />
