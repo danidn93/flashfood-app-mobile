@@ -1,5 +1,5 @@
 import RestaurantExitGuard from '../components/RestaurantExitGuard'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
@@ -19,6 +19,7 @@ import {
   ImageOff,
 } from 'lucide-react'
 import { obtenerRestaurantes } from '../services/restaurantes'
+import { supabase } from '../lib/supabase'
 import {
   agregarAlCarrito,
   obtenerCarrito,
@@ -89,7 +90,10 @@ export default function RestaurantPage() {
 
   const [restaurante, setRestaurante] = useState<Restaurante | null>(null)
   const [productos, setProductos] = useState<ProductoMenu[]>([])
-  const [modalidad, setModalidad] = useState<ModalidadPedido>('domicilio')
+  const [modalidad, setModalidad] = useState<ModalidadPedido>('retirar')
+  const [deliveryDisponible, setDeliveryDisponible] = useState(false)
+  const [consultandoDelivery, setConsultandoDelivery] = useState(true)
+  const [mensajeDelivery, setMensajeDelivery] = useState('')
   const [busqueda, setBusqueda] = useState('')
   const [categoria, setCategoria] = useState('Todos')
   const [ordenPrecio, setOrdenPrecio] = useState(false)
@@ -107,6 +111,22 @@ export default function RestaurantPage() {
   const [mensajeCarrito, setMensajeCarrito] = useState('')
   const [confirmacionCarrito, setConfirmacionCarrito] =
     useState<AgregarItemInput[] | null>(null)
+
+  const verificarDelivery = useCallback(async () => {
+    setConsultandoDelivery(true)
+    const { data, error: disponibilidadError } = await supabase.rpc('flashfood_delivery_disponible')
+    const disponible = !disponibilidadError && data === true
+    setDeliveryDisponible(disponible)
+    setConsultandoDelivery(false)
+    return disponible
+  }, [])
+
+  useEffect(() => {
+    void verificarDelivery()
+    const alVolver = () => { if (document.visibilityState === 'visible') void verificarDelivery() }
+    document.addEventListener('visibilitychange', alVolver)
+    return () => document.removeEventListener('visibilitychange', alVolver)
+  }, [verificarDelivery])
 
   useEffect(() => {
     let activo = true
@@ -297,8 +317,12 @@ export default function RestaurantPage() {
     })
   }
 
-  function agregarProducto() {
+  async function agregarProducto() {
     if (!seleccionado || !restaurante || !puedePedir || cantidadSeleccionada < 1) return
+    if (modalidad === 'domicilio' && !(await verificarDelivery())) {
+      setMensajeCarrito('No hay repartidores disponibles. Selecciona Retirar o Servir.')
+      return
+    }
 
     const base = {
       sucursalId: restaurante.id,
@@ -525,11 +549,24 @@ export default function RestaurantPage() {
               <button
                 key={valor}
                 type="button"
-                onClick={() => setModalidad(valor)}
+                onClick={async () => {
+                  if (valor === 'domicilio') {
+                    const disponible = await verificarDelivery()
+                    if (!disponible) {
+                      setMensajeDelivery('No hay repartidores disponibles. Puedes retirar o consumir en el restaurante.')
+                      return
+                    }
+                  }
+                  setMensajeDelivery('')
+                  setModalidad(valor)
+                }}
+                disabled={valor === 'domicilio' && (consultandoDelivery || !deliveryDisponible)}
+                title={valor === 'domicilio' && !deliveryDisponible ? 'No hay repartidores disponibles' : undefined}
                 className={`flex min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 py-3 text-[12px] font-bold transition ${
                   modalidad === valor
                     ? 'bg-[#171717] text-white shadow-sm'
                     : 'text-gray-600'
+                } ${valor === 'domicilio' && (consultandoDelivery || !deliveryDisponible) ? 'cursor-not-allowed opacity-40' : ''
                 }`}
               >
                 <Icono size={15} className="shrink-0" />
@@ -538,6 +575,10 @@ export default function RestaurantPage() {
             ))}
           </div>
 
+          {!consultandoDelivery && !deliveryDisponible && (
+            <p className="mt-2 text-xs font-semibold text-amber-700">Domicilio no disponible: no hay repartidores activos y disponibles.</p>
+          )}
+          {mensajeDelivery && <p role="status" className="mt-2 text-xs text-amber-700">{mensajeDelivery}</p>}
           <div className="mt-4 flex items-start gap-2 rounded-xl bg-orange-50 px-3 py-3 text-xs text-orange-900">
             {modalidad === 'domicilio' ? (
               <Bike size={17} className="shrink-0" />
