@@ -75,6 +75,11 @@ export default function SuperadminPage() {
   const [previewNight, setPreviewNight] = useState(false)
   const [cardFee, setCardFee] = useState('15')
   const [cardSettingExists, setCardSettingExists] = useState(false)
+  const [driverOpen, setDriverOpen] = useState(false)
+  const [driverName, setDriverName] = useState('')
+  const [driverEmail, setDriverEmail] = useState('')
+  const [driverPhone, setDriverPhone] = useState('')
+  const [driverInvite, setDriverInvite] = useState(false)
   const [createOpen,setCreateOpen]=useState(false)
   const [createName,setCreateName]=useState('')
   const [createEmail,setCreateEmail]=useState('')
@@ -170,6 +175,25 @@ export default function SuperadminPage() {
   const previewExtra = Math.max(0, Number(previewKm || 0) - delivery.included_km)
   const previewTotal = delivery.base_fee + previewExtra * delivery.additional_km_fee +
     (previewNight ? delivery.night_fee : 0) + (delivery.rain_enabled ? delivery.rain_fee : 0)
+  const registerDriver = async () => {
+    if (driverName.trim().length < 3 || !driverEmail.includes('@')) {
+      setError('Ingresa nombre y correo del repartidor')
+      return
+    }
+    setSaving(true); setError(''); setNotice('')
+    try {
+      const result = await invoke('driver_register', {
+        full_name: driverName.trim(), email: driverEmail.trim().toLowerCase(),
+        phone: driverPhone.trim(), invite: driverInvite,
+      })
+      setDriverOpen(false)
+      setNotice(result.invited
+        ? 'Repartidor invitado. Verifica su perfil y habilítalo cuando esté listo.'
+        : 'Rol delivery asignado y perfil vinculado. Verifica y habilita al repartidor.')
+      await load()
+    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo registrar el repartidor') }
+    finally { setSaving(false) }
+  }
   const openCreateUser=()=>{
     setCreateOpen(true);setCreateName('');setCreateEmail('');setCreateRole('cliente');setCreateBusiness('');setError('')
     void loadBusinesses().then(r=>setBusinessChoices(r.businesses)).catch(e=>setError(e instanceof Error?e.message:'No se pudieron cargar los negocios'))
@@ -310,7 +334,7 @@ export default function SuperadminPage() {
         ['Pedidos marketplace', dashboard?.orders, ClipboardList], ['Repartidores', dashboard?.drivers, Bike],
         ['Roles activos', dashboard?.users, Users], ['Ventas pagadas marketplace', currency(dashboard?.gross_sales ?? 0), CreditCard],
       ].map(([label, value, Icon]) => { const I = Icon as typeof Store; return <div key={String(label)} className="rounded-2xl border bg-white p-5 shadow-sm"><I className="mb-3 text-orange-500" size={24}/><p className="text-sm text-slate-500">{String(label)}</p><p className="mt-2 text-2xl font-extrabold">{loading ? '…' : String(value ?? 0)}</p></div> })}</div><p className="mt-5 text-sm text-slate-500">Los pedidos y ventas corresponden a flashfood_orders. Los restaurantes y sucursales registrados se cuentan desde sus tablas originales.</p></> : <div className="rounded-2xl border bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b p-5"><div><h2 className="font-bold">{config?.title}</h2><p className="text-xs text-slate-500">Página {page} · {rows.length} registros cargados</p></div><div className="flex flex-wrap gap-2">{section === 'users' && <button onClick={openCreateUser} className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-semibold text-white">+ Crear usuario</button>}<label className="flex items-center gap-2 rounded-xl border px-3 py-2"><Search size={17}/><input className="w-40 outline-none" placeholder="Buscar en esta página" value={query} onChange={e => setQuery(e.target.value)}/></label></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b p-5"><div><h2 className="font-bold">{config?.title}</h2><p className="text-xs text-slate-500">Página {page} · {rows.length} registros cargados</p></div><div className="flex flex-wrap gap-2">{section === 'drivers' && <button onClick={() => {setDriverName('');setDriverEmail('');setDriverPhone('');setDriverInvite(false);setDriverOpen(true);setError('')}} className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-semibold text-white">+ Registrar repartidor</button>}{section === 'users' && <button onClick={openCreateUser} className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-semibold text-white">+ Crear usuario</button>}<label className="flex items-center gap-2 rounded-xl border px-3 py-2"><Search size={17}/><input className="w-40 outline-none" placeholder="Buscar en esta página" value={query} onChange={e => setQuery(e.target.value)}/></label></div></div>
         <div className="overflow-x-auto"><table className="w-full min-w-[780px] text-left text-sm"><thead className="bg-slate-50"><tr>{config?.columns.map(key => <th key={key} className="px-4 py-3">{labels[key] || key}</th>)}{config?.entity && <th className="px-4 py-3">Acciones</th>}</tr></thead><tbody>{filtered.map((row, index) => <tr key={String(row.id ?? index)} className="border-t">{config?.columns.map(key => <td key={key} className="max-w-64 truncate px-4 py-3" title={show(row[key], key)}>{show(row[key], key)}</td>)}{config?.entity && <td className="px-4 py-3"><button onClick={() => startEdit(row)} className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 font-semibold text-orange-600"><Pencil size={15}/> Editar</button></td>}</tr>)}</tbody></table>{!filtered.length && <p className="p-8 text-center text-slate-500">No hay registros en esta página.</p>}</div>
         <div className="flex justify-end gap-2 border-t p-4"><button disabled={page === 1 || loading} onClick={() => setPage(p => p - 1)} className="rounded-lg border px-4 py-2 disabled:opacity-40">Anterior</button><button disabled={rows.length < 100 || loading} onClick={() => setPage(p => p + 1)} className="rounded-lg border px-4 py-2 disabled:opacity-40">Siguiente</button></div>
       </div>}
@@ -334,6 +358,24 @@ export default function SuperadminPage() {
         </div>
       </section>}
 
+      {driverOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="max-h-[90dvh] w-full max-w-xl space-y-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold">Registrar repartidor</h2>
+            <button type="button" onClick={() => setDriverOpen(false)} aria-label="Cerrar"><X size={22}/></button>
+          </div>
+          <p className="text-sm text-slate-500">Si la cuenta existe, se vincula al perfil delivery. Si no existe, puedes invitarla. Los repartidores nuevos se crean sin verificar y desactivados hasta su aprobación.</p>
+          <label className="block text-sm font-medium">Nombre completo<input className="mt-1 w-full rounded-xl border p-3" value={driverName} onChange={e=>setDriverName(e.target.value)} maxLength={150}/></label>
+          <label className="block text-sm font-medium">Correo de la cuenta<input type="email" className="mt-1 w-full rounded-xl border p-3" value={driverEmail} onChange={e=>setDriverEmail(e.target.value)}/></label>
+          <label className="block text-sm font-medium">Teléfono<input type="tel" className="mt-1 w-full rounded-xl border p-3" value={driverPhone} onChange={e=>setDriverPhone(e.target.value)} maxLength={30}/></label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={driverInvite} onChange={e=>setDriverInvite(e.target.checked)}/> Enviar invitación si no existe la cuenta</label>
+          {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+          <div className="flex justify-end gap-3">
+            <button type="button" onClick={() => setDriverOpen(false)} className="rounded-xl border px-5 py-3">Cancelar</button>
+            <button type="button" disabled={saving || driverName.trim().length<3 || !driverEmail.includes('@')} onClick={()=>void registerDriver()} className="rounded-xl bg-orange-500 px-5 py-3 font-bold text-white disabled:opacity-50">{saving?'Guardando…':'Registrar repartidor'}</button>
+          </div>
+        </div>
+      </div>}
       {createOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
         <div className="max-h-[90dvh] w-full max-w-xl space-y-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
           <div className="flex items-center justify-between"><h2 className="text-xl font-bold">Crear usuario FlashFood</h2><button type="button" aria-label="Cerrar" onClick={()=>setCreateOpen(false)}><X size={22}/></button></div>
