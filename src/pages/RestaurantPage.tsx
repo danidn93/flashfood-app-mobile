@@ -882,8 +882,8 @@ export default function RestaurantPage() {
 
       {/* Detalle de producto y presentaciones */}
       {seleccionado && createPortal(
-        <div role="presentation" className="fixed inset-0 z-[200] flex h-[100dvh] items-end justify-center bg-black/50 sm:items-center">
-          <div role="dialog" aria-modal="true" aria-label={`Detalle de ${seleccionado.nombre}`} className="flex min-h-0 max-h-[calc(100dvh-12px)] w-full max-w-lg flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl sm:max-h-[92dvh] sm:rounded-3xl">
+        <div role="presentation" className="fixed inset-x-0 bottom-0 z-[200] flex items-end justify-center bg-black/50 sm:items-center" style={{ top: "calc(var(--flashfood-safe-top, 0px) + 16px)" }}>
+          <div role="dialog" aria-modal="true" aria-label={`Detalle de ${seleccionado.nombre}`} className="flex min-h-0 max-h-full w-full max-w-lg flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl sm:max-h-[92dvh] sm:rounded-3xl">
             <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
               <h2 className="min-w-0 flex-1 truncate text-base font-extrabold">
                 {seleccionado.nombre}
