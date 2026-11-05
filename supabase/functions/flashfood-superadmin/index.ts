@@ -377,7 +377,7 @@ Deno.serve(async req => {
       const name = asString(body.full_name, 150)
       const phone = asString(body.phone, 30)
       const invite = body.invite === true
-      if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || name.length < 3)
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || name.length < 3)
         return fail('Ingresa un nombre completo y un correo válido')
       let targetId = ''
       let invited = false
@@ -455,7 +455,7 @@ Deno.serve(async req => {
       const email=asString(body.email,255).toLowerCase()
       const role=asString(body.role,60)
       const active=body.active
-      if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || !['superadmin','admin','empleado','delivery'].includes(role) || typeof active!=='boolean') return fail('Correo, rol o estado inválidos')
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !['superadmin','admin','empleado','delivery'].includes(role) || typeof active!=='boolean') return fail('Correo, rol o estado inválidos')
       let userId:string|null=null
       for(let p=1;p<=100;p++){
         const {data:users,error:e}=await db.auth.admin.listUsers({page:p,perPage:1000})
