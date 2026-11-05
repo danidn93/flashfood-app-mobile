@@ -137,3 +137,30 @@ video {
     font-size: 16px !important;
   }
 }
+
+
+/* Native Capacitor apps: prevent long-press text selection/copy on interface copy.
+   Preserve editable fields, accessibility focus, and normal web behaviour. */
+.flashfood-native,
+.flashfood-native button,
+.flashfood-native a,
+.flashfood-native label,
+.flashfood-native p,
+.flashfood-native span,
+.flashfood-native h1,
+.flashfood-native h2,
+.flashfood-native h3,
+.flashfood-native h4,
+.flashfood-native li {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.flashfood-native input,
+.flashfood-native textarea,
+.flashfood-native select,
+.flashfood-native [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
