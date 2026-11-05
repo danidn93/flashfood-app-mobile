@@ -117,7 +117,7 @@ Deno.serve(async req=>{
   }
   if(action==='driver_profile'){
    if(!superadmin&&!activeRoles.includes('delivery'))return bad('No autorizado',403)
-   const {data,error}=await db.from('flashfood_drivers').select('*').eq('user_id',caller).maybeSingle()
+   const {data,error}=await db.from('flashfood_drivers').select('*').eq('auth_user_id',caller).maybeSingle()
    if(error)throw error
    return respond({ok:true,driver:data})
   }
