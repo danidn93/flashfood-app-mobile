@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { supabase } from '../lib/supabase'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ArrowRight, Bike, Check, ChevronRight,
@@ -152,6 +153,8 @@ function Modal({
 export default function CarritoPage() {
   const navigate = useNavigate()
   const [carrito, setCarrito] = useState<Carrito | null>(() => obtenerCarrito())
+  const [deliveryDisponible, setDeliveryDisponible] = useState(false)
+  const [consultandoDelivery, setConsultandoDelivery] = useState(true)
   const [confirmarVaciar, setConfirmarVaciar] = useState(false)
   const [mensaje, setMensaje] = useState('')
   const [metodoPago, setMetodoPago] = useState<MetodoPago>(
@@ -170,6 +173,20 @@ export default function CarritoPage() {
   const [costoEnvio] = useState<number | null>(null)
 
   useEffect(() => suscribirseAlCarrito(() => setCarrito(obtenerCarrito())), [])
+  useEffect(() => {
+    let active = true
+    const refresh = async () => {
+      if (active) setConsultandoDelivery(true)
+      const { data, error } = await supabase.rpc('flashfood_delivery_disponible')
+      if (!active) return
+      setDeliveryDisponible(!error && data === true)
+      setConsultandoDelivery(false)
+    }
+    void refresh()
+    const onFocus = () => { if (document.visibilityState === 'visible') void refresh() }
+    document.addEventListener('visibilitychange', onFocus)
+    return () => { active = false; document.removeEventListener('visibilitychange', onFocus) }
+  }, [])
 
   const esDelivery = carrito?.modalidad === 'domicilio'
   /* eslint-disable react-hooks/set-state-in-effect -- La modalidad de pago debe sincronizarse al cambiar entrega. */
@@ -202,7 +219,16 @@ export default function CarritoPage() {
     facturacion.nombre.trim() && facturacion.identificacion.trim() && facturacion.correo.trim()
   )
 
-  function cambiarModalidad(nuevaModalidad: Carrito['modalidad']) {
+  async function cambiarModalidad(nuevaModalidad: Carrito['modalidad']) {
+    if (nuevaModalidad === 'domicilio') {
+      const { data, error } = await supabase.rpc('flashfood_delivery_disponible')
+      const disponible = !error && data === true
+      setDeliveryDisponible(disponible)
+      if (!disponible) {
+        setMensaje('No hay repartidores disponibles. Selecciona Retirar o Servir.')
+        return
+      }
+    }
     if (!carrito || nuevaModalidad === carrito.modalidad) {
       setModal(null)
       return
@@ -420,8 +446,8 @@ export default function CarritoPage() {
             ] as const).map(opcion => {
               const Icono = opcion.icono
               return (
-                <button key={opcion.id} type="button" onClick={() => cambiarModalidad(opcion.id)}
-                  className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left ${carrito.modalidad === opcion.id ? 'border-orange-500 bg-orange-50' : 'border-gray-200'}`}>
+                <button key={opcion.id} type="button" onClick={() => void cambiarModalidad(opcion.id)} disabled={opcion.id === 'domicilio' && (consultandoDelivery || !deliveryDisponible)}
+                  className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left ${carrito.modalidad === opcion.id ? 'border-orange-500 bg-orange-50' : 'border-gray-200'} ${opcion.id === 'domicilio' && (consultandoDelivery || !deliveryDisponible) ? 'cursor-not-allowed opacity-40' : ''}`}>
                   <Icono size={23} className="shrink-0 text-orange-600" />
                   <span className="min-w-0 flex-1"><span className="block text-sm font-bold">{opcion.titulo}</span>
                     <span className="mt-1 block text-xs text-gray-500">{opcion.descripcion}</span></span>
