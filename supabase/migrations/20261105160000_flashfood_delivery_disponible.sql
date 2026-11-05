@@ -13,12 +13,12 @@ as $$
     select 1
     from public.flashfood_drivers as d
     inner join public.flashfood_user_roles as r
-      on r.user_id = d.user_id
+      on r.user_id = d.auth_user_id
       and r.role = 'delivery'
       and r.active = true
     where d.active = true
       and d.verified = true
-      and lower(coalesce(d.availability::text, '')) in ('available', 'disponible')
+      and d.availability = 'available'
   );
 $$;
 
