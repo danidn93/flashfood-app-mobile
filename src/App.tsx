@@ -198,7 +198,7 @@ function AppLayout() {
     location.pathname === '/login' || ['/establecer-contrasena', '/restablecer-contrasena', '/cambiar-contrasena'].includes(location.pathname)
 
   return (
-    <div className="flashfood-app-shell bg-[#F7F8FA] text-[#171717]">
+    <div className={`flashfood-app-shell bg-[#F7F8FA] text-[#171717] ${Capacitor.isNativePlatform() ? "flashfood-native" : ""}`}>
       {!esPantallaAutenticacion && (
         <header className="sticky top-0 z-40 border-b border-gray-100 bg-white/95 backdrop-blur-xl">
           <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
