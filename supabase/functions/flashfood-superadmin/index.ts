@@ -37,11 +37,11 @@ Deno.serve(async req => {
 
     const ensureDriverProfile = async (userId: string, fullName: string, phone: string) => {
       const { data: existing, error: readError } = await db.from('flashfood_drivers')
-        .select('id').eq('user_id', userId).maybeSingle()
+        .select('id').eq('auth_user_id', userId).maybeSingle()
       if (readError) throw readError
       if (existing) return existing.id
       const { data, error } = await db.from('flashfood_drivers').insert({
-        user_id: userId, full_name: fullName, phone, active: false, verified: false,
+        auth_user_id: userId, full_name: fullName, phone: phone || null, availability: 'offline', active: false, verified: false,
       }).select('id').single()
       if (error) throw error
       return data.id
