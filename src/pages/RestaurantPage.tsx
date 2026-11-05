@@ -841,8 +841,8 @@ export default function RestaurantPage() {
         </div>
       )}
 
-      {carritoDelRestaurante && cantidadCarrito > 0 && !seleccionado && (
-        <div className="fixed bottom-[82px] left-0 right-0 z-40 px-4">
+      {carritoDelRestaurante && cantidadCarrito > 0 && !seleccionado && createPortal(
+        <div className="fixed inset-x-0 z-[45] px-4" style={{ bottom: 'calc(104px + env(safe-area-inset-bottom, 0px))' }}>
           <Link
             to="/carrito"
             className="mx-auto flex h-14 w-full max-w-2xl items-center gap-3 rounded-2xl bg-[#F97316] px-4 text-white shadow-[0_8px_30px_rgba(249,115,22,0.35)]"
@@ -861,7 +861,8 @@ export default function RestaurantPage() {
 
             <ChevronRight size={20} />
           </Link>
-        </div>
+        </div>,
+        document.body,
       )}
 
       <RestaurantExitGuard
