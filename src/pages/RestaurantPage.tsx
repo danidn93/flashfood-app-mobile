@@ -1,5 +1,6 @@
 import RestaurantExitGuard from '../components/RestaurantExitGuard'
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -880,9 +881,9 @@ export default function RestaurantPage() {
       )}
 
       {/* Detalle de producto y presentaciones */}
-      {seleccionado && (
-        <div className="fixed inset-0 z-[100] flex h-[100dvh] items-end justify-center bg-black/50 sm:items-center">
-          <div className="flex min-h-0 max-h-[calc(100dvh-12px)] w-full max-w-lg flex-col overflow-hidden rounded-t-[28px] bg-white sm:max-h-[92dvh] sm:rounded-3xl">
+      {seleccionado && createPortal(
+        <div role="presentation" className="fixed inset-0 z-[200] flex h-[100dvh] items-end justify-center bg-black/50 sm:items-center">
+          <div role="dialog" aria-modal="true" aria-label={`Detalle de ${seleccionado.nombre}`} className="flex min-h-0 max-h-[calc(100dvh-12px)] w-full max-w-lg flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl sm:max-h-[92dvh] sm:rounded-3xl">
             <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
               <h2 className="min-w-0 flex-1 truncate text-base font-extrabold">
                 {seleccionado.nombre}
@@ -1034,7 +1035,8 @@ export default function RestaurantPage() {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </main>
   )
