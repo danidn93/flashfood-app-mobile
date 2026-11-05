@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { PushNotifications } from '@capacitor/push-notifications'
 import { supabase } from './lib/supabase'
@@ -9,6 +9,8 @@ import {
   suscribirseAlCarrito,
 } from './services/carrito'
 import CarritoPage from './pages/CarritoPage'
+import DireccionesPage from './pages/DireccionesPage'
+import { direccionSeleccionada, observarDireccion } from './services/direcciones'
 import {
   BrowserRouter,
   Link,
@@ -47,6 +49,14 @@ function SectionPage({ titulo }: { titulo: string }) {
 
 function AppLayout() {
   const location = useLocation()
+  const [direccionHeader, setDireccionHeader] = useState('Seleccionar dirección')
+  useEffect(() => {
+    let active = true
+    const actualizar = () => { void direccionSeleccionada().then(d => { if(active) setDireccionHeader(d ? `${d.label} · ${d.address_line}` : 'Seleccionar dirección') }).catch(()=>{ if(active) setDireccionHeader('Seleccionar dirección') }) }
+    actualizar()
+    const cancelar = observarDireccion(actualizar)
+    return () => { active = false; cancelar() }
+  }, [location.pathname])
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return
@@ -200,7 +210,7 @@ function AppLayout() {
               />
             </Link>
 
-            <div className="flex min-w-0 flex-1 flex-col items-end">
+            <Link to="/mis-direcciones" aria-label="Seleccionar dirección de entrega" className="flex min-w-0 flex-1 flex-col items-end">
               <span className="text-[10px] font-medium text-gray-400">
                 Tu ubicación
               </span>
@@ -212,10 +222,10 @@ function AppLayout() {
                 />
 
                 <span className="truncate">
-                  Seleccionar dirección
+                  {direccionHeader}
                 </span>
               </div>
-            </div>
+            </Link>
 
             <div
               aria-label="Notificaciones"
@@ -239,6 +249,7 @@ function AppLayout() {
         />
 
         <Route path="/carrito" element={<CarritoPage />} />
+        <Route path="/mis-direcciones" element={<DireccionesPage />} />
 
         <Route
           path="/pedidos"
