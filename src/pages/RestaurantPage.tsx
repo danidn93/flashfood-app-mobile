@@ -658,7 +658,17 @@ export default function RestaurantPage() {
                   return (
                     <article
                       key={producto.id}
-                      className="flex min-h-[140px] overflow-hidden rounded-2xl border border-gray-100 bg-white"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Seleccionar ${producto.nombre}`}
+                      onClick={() => abrirProducto(producto)}
+                      onKeyDown={(event) => {
+                        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                          event.preventDefault()
+                          abrirProducto(producto)
+                        }
+                      }}
+                      className="flex min-h-[140px] cursor-pointer overflow-hidden rounded-2xl border border-gray-100 bg-white active:bg-orange-50"
                     >
                       <div className="relative w-[120px] shrink-0 bg-gray-100">
                         {imagen ? (
@@ -703,8 +713,11 @@ export default function RestaurantPage() {
 
                           <button
                             type="button"
-                            onClick={() => abrirProducto(producto)}
-                            aria-label={`Ver ${producto.nombre}`}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              abrirProducto(producto)
+                            }}
+                            aria-label={`Seleccionar ${producto.nombre}`}
                             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F97316] text-white"
                           >
                             {puedePedir ? (
@@ -868,8 +881,8 @@ export default function RestaurantPage() {
 
       {/* Detalle de producto y presentaciones */}
       {seleccionado && (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 sm:items-center">
-          <div className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[28px] bg-white sm:rounded-3xl">
+        <div className="fixed inset-0 z-[100] flex h-[100dvh] items-end justify-center bg-black/50 sm:items-center">
+          <div className="flex min-h-0 max-h-[calc(100dvh-12px)] w-full max-w-lg flex-col overflow-hidden rounded-t-[28px] bg-white sm:max-h-[92dvh] sm:rounded-3xl">
             <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
               <h2 className="min-w-0 flex-1 truncate text-base font-extrabold">
                 {seleccionado.nombre}
@@ -885,7 +898,7 @@ export default function RestaurantPage() {
               </button>
             </div>
 
-            <div className="overflow-y-auto px-5 py-5">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5">
               <div className="mb-4 flex h-40 w-full items-center justify-center overflow-hidden rounded-2xl bg-gray-100">
                 {imagenProducto(seleccionado) ? (
                   <img
@@ -1002,7 +1015,7 @@ export default function RestaurantPage() {
               )}
             </div>
 
-            <div className="border-t border-gray-100 bg-white px-5 pb-7 pt-4">
+            <div className="shrink-0 border-t border-gray-100 bg-white px-5 pt-4" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
               {!puedePedir ? (
                 <p className="rounded-xl bg-amber-50 p-3 text-center text-sm font-semibold text-amber-800">
                   Este restaurante todavía no acepta pedidos desde FlashFood.
