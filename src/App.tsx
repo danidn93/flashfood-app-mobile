@@ -49,6 +49,11 @@ function SectionPage({ titulo }: { titulo: string }) {
 
 function AppLayout() {
   const location = useLocation()
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    document.body.classList.add('flashfood-native')
+    return () => document.body.classList.remove('flashfood-native')
+  }, [])
   const [direccionHeader, setDireccionHeader] = useState('Seleccionar dirección')
   useEffect(() => {
     let active = true
