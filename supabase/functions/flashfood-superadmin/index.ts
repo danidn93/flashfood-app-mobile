@@ -34,6 +34,28 @@ Deno.serve(async req => {
     }
     const catalog = async () => checked(await db.rpc('flashfood_catalogo_restaurantes', { p_app_codigo: 'flashfood_mobile' })) as Record<string, unknown>[] || []
 
+
+    const ensureDriverProfile = async (userId: string, fullName: string, phone: string) => {
+      const { data: existing, error: readError } = await db.from('flashfood_drivers')
+        .select('id').eq('user_id', userId).maybeSingle()
+      if (readError) throw readError
+      if (existing) return existing.id
+      const { data, error } = await db.from('flashfood_drivers').insert({
+        user_id: userId, full_name: fullName, phone, active: false, verified: false,
+      }).select('id').single()
+      if (error) throw error
+      return data.id
+    }
+    const ensureDeliveryRole = async (userId: string) => {
+      const { data: old, error: readError } = await db.from('flashfood_user_roles')
+        .select('id').eq('user_id', userId).eq('role', 'delivery').maybeSingle()
+      if (readError) throw readError
+      const result = old
+        ? await db.from('flashfood_user_roles').update({ active: true }).eq('id', old.id)
+        : await db.from('flashfood_user_roles').insert({ user_id: userId, role: 'delivery', active: true })
+      if (result.error) throw result.error
+    }
+
     if (action === 'ping') return json({ ok: true, user_id: identity.user.id })
     if (action === 'dashboard') {
       const [locals, branches, orders, drivers, roleRows, paid] = await Promise.all([
@@ -349,6 +371,40 @@ Deno.serve(async req => {
       if (error) throw error
       return json({ ok: true, user_id: data.user.id })
     }
+
+    if (action === 'driver_register') {
+      const email = asString(body.email, 254).toLowerCase()
+      const name = asString(body.full_name, 150)
+      const phone = asString(body.phone, 30)
+      const invite = body.invite === true
+      if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || name.length < 3)
+        return fail('Ingresa un nombre completo y un correo válido')
+      let targetId = ''
+      let invited = false
+      for (let page = 1; page <= 100; page++) {
+        const { data, error } = await db.auth.admin.listUsers({ page, perPage: 1000 })
+        if (error) throw error
+        const found = data.users.find(u => u.email?.toLowerCase() === email)
+        if (found) { targetId = found.id; break }
+        if (data.users.length < 1000) break
+      }
+      if (!targetId) {
+        if (!invite) return fail('No existe esa cuenta. Activa la opción Invitar si no existe.', 404)
+        const appUrl = Deno.env.get('FLASHFOOD_APP_URL')?.trim().replace(/\\/$/, '')
+        if (!appUrl || !appUrl.startsWith('https://')) return fail('Configura FLASHFOOD_APP_URL.', 503)
+        const { data, error } = await db.auth.admin.inviteUserByEmail(email, {
+          data: { full_name: name }, redirectTo: appUrl + '/establecer-contrasena',
+        })
+        if (error) throw error
+        if (!data.user) return fail('No se pudo enviar la invitación', 500)
+        targetId = data.user.id
+        invited = true
+      }
+      const driverId = await ensureDriverProfile(targetId, name, phone)
+      await ensureDeliveryRole(targetId)
+      return json({ ok: true, driver_id: driverId, user_id: targetId, invited })
+    }
+
     if (action === 'create_user') {
       const name=asString(body.name,150)
       const email=asString(body.email,254).toLowerCase()
@@ -382,6 +438,7 @@ Deno.serve(async req => {
           const {error:roleError}=await db.from('flashfood_user_roles').insert({user_id:userId,role,active:true})
           if(roleError)throw roleError
         }
+        if(role==='delivery') await ensureDriverProfile(userId, name, '')
         if(role==='admin'||role==='empleado'){
           const {error:accessError}=await db.from('flashfood_business_access').insert({
             user_id:userId,business_id:businessId,branch_id:null,role,active:true
@@ -419,6 +476,11 @@ Deno.serve(async req => {
       if(readError)throw readError
       const result=existing?await db.from('flashfood_user_roles').update({active}).eq('id',existing.id).select().single():await db.from('flashfood_user_roles').insert({user_id:userId,role,active}).select().single()
       if(result.error)throw result.error
+      if (role === 'delivery' && active) {
+        const { data: u, error: e } = await db.auth.admin.getUserById(userId)
+        if (e) throw e
+        await ensureDriverProfile(userId, String(u.user.user_metadata?.full_name || u.user.email || 'Repartidor'), String(u.user.phone || ''))
+      }
       return json({ok:true,user_id:userId,role,active})
     }
     if (action === 'set_role') {
@@ -433,6 +495,11 @@ Deno.serve(async req => {
         ? await db.from('flashfood_user_roles').update({ active }).eq('id', existing.id).select().single()
         : await db.from('flashfood_user_roles').insert({ user_id: userId, role, active }).select().single()
       if (result.error) throw result.error
+      if (role === 'delivery' && active) {
+        const { data: u, error: e } = await db.auth.admin.getUserById(userId as string)
+        if (e) throw e
+        await ensureDriverProfile(userId as string, String(u.user.user_metadata?.full_name || u.user.email || 'Repartidor'), String(u.user.phone || ''))
+      }
       return json({ ok: true, row: result.data })
     }
     return fail('Acción no soportada')
