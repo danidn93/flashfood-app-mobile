@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../lib/supabase'
-import { direccionSeleccionada, observarDireccion } from '../services/direcciones'
+import { direccionSeleccionada, observarDireccion, type DireccionEntrega } from '../services/direcciones'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ArrowRight, Bike, Check, ChevronRight,
@@ -170,17 +170,21 @@ export default function CarritoPage() {
   })
   const [propina, setPropina] = useState(0)
   const [otraPropina, setOtraPropina] = useState('')
-  // Se conectará con la cotización real del repartidor.
-  const [costoEnvio] = useState<number | null>(null)
+  const [costoEnvio, setCostoEnvio] = useState<number | null>(null)
+  const [direccionActiva, setDireccionActiva] = useState<DireccionEntrega | null>(null)
+  const [cotizando, setCotizando] = useState(false)
+  const [detalleCotizacion, setDetalleCotizacion] = useState('')
+  const [distanciaKm, setDistanciaKm] = useState<number | null>(null)
 
   useEffect(() => suscribirseAlCarrito(() => setCarrito(obtenerCarrito())), [])
   useEffect(() => {
     let active = true
     const refresh = () => { void direccionSeleccionada().then(d => {
-      if (!active || !d) return
-      setDireccion(`${d.address_line}, ${d.city}`)
-      setReferencia(d.reference || '')
-    }).catch(()=>{}) }
+      if (!active) return
+      setDireccionActiva(d)
+      setDireccion(d ? `${d.address_line}, ${d.city}` : '')
+      setReferencia(d?.reference || '')
+    }).catch(()=>{ if(active)setDireccionActiva(null) }) }
     refresh()
     const remove = observarDireccion(refresh)
     return () => { active = false; remove() }
@@ -199,6 +203,40 @@ export default function CarritoPage() {
     document.addEventListener('visibilitychange', onFocus)
     return () => { active = false; document.removeEventListener('visibilitychange', onFocus) }
   }, [])
+
+  useEffect(() => {
+    let active = true
+    if (carrito?.modalidad !== 'domicilio' || !carrito.sucursalId) return
+    if (!direccionActiva) {
+      setCostoEnvio(null)
+      setDistanciaKm(null)
+      setDetalleCotizacion('Selecciona una dirección guardada para cotizar el envío.')
+      return
+    }
+    const cotizar = async () => {
+      setCotizando(true)
+      setCostoEnvio(null)
+      setDistanciaKm(null)
+      setDetalleCotizacion('')
+      try {
+        const { data, error } = await supabase.functions.invoke('flashfood-delivery-quote', {
+          body: { branch_id: carrito.sucursalId, address_id: direccionActiva.id },
+        })
+        if (error) throw new Error(error.message)
+        if (!data?.ok) throw new Error(data?.error || 'No fue posible cotizar el envío')
+        if (!active) return
+        setCostoEnvio(Number(data.delivery_fee))
+        setDistanciaKm(Number(data.distance_km))
+        setDetalleCotizacion(String(data.message || 'Estimación geográfica'))
+      } catch (err) {
+        if (active) setDetalleCotizacion(err instanceof Error ? err.message : 'Error de cotización')
+      } finally {
+        if (active) setCotizando(false)
+      }
+    }
+    void cotizar()
+    return () => { active = false }
+  }, [carrito?.sucursalId, carrito?.modalidad, direccionActiva?.id])
 
   const esDelivery = carrito?.modalidad === 'domicilio'
   /* eslint-disable react-hooks/set-state-in-effect -- La modalidad de pago debe sincronizarse al cambiar entrega. */
@@ -420,7 +458,7 @@ export default function CarritoPage() {
                   <span>Total</span><span>{pendienteEnvio ? 'Por calcular' : dinero(desglose.total)}</span>
                 </div>
               </div>
-              {pendienteEnvio && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-800">Falta obtener la tarifa real de entrega antes de confirmar el total.</p>}
+              {esDelivery && <p role="status" className="mt-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-800">{cotizando ? 'Calculando envío...' : detalleCotizacion || 'Selecciona tu dirección con GPS para estimar el costo.'}{distanciaKm !== null ? ` Distancia geográfica: ${distanciaKm.toFixed(2)} km.` : ''}</p>}
             </section>
             {mensaje && <div className="mx-4 mt-4 flex items-center gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-700"><AlertCircle size={17} />{mensaje}</div>}
             <div className="bg-white px-4 pb-6 pt-4">
