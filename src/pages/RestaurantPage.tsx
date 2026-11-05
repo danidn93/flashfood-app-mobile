@@ -778,10 +778,10 @@ export default function RestaurantPage() {
         </section>
       </div>
 
-      {mensajeCarrito && (
+      {mensajeCarrito && createPortal(
         <div
           role="status"
-          className="fixed bottom-24 left-1/2 z-[120] flex w-[calc(100%-32px)] max-w-sm -translate-x-1/2 items-center justify-between gap-3 rounded-2xl bg-[#171717] px-4 py-3 text-sm font-semibold text-white shadow-xl"
+          className="fixed bottom-28 left-1/2 z-[350] flex w-[calc(100%-32px)] max-w-sm -translate-x-1/2 items-center justify-between gap-3 rounded-2xl bg-[#171717] px-4 py-3 text-sm font-semibold text-white shadow-xl"
         >
           <span>{mensajeCarrito}</span>
           <button
@@ -792,11 +792,12 @@ export default function RestaurantPage() {
           >
             <X size={18} />
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
 
-      {confirmacionCarrito && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 px-5">
+      {confirmacionCarrito && createPortal(
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 px-5">
           <div
             role="dialog"
             aria-modal="true"
@@ -838,7 +839,8 @@ export default function RestaurantPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {carritoDelRestaurante && cantidadCarrito > 0 && !seleccionado && createPortal(
