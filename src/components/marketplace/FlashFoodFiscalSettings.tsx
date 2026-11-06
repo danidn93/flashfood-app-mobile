@@ -9,12 +9,14 @@ type Profile={
  certificate_uploaded_at:string|null;certificate_sha256:string|null
 }
 type Merchant={id:string;nombre:string;origen:'local'|'multicomercios';negocio_origen_id:string|null;facturacion_flashfood_habilitada:boolean}
+type InvoiceJob={id:string;order_id:string;issuer_type:string;status:string;created_at:string;last_error:string|null;remote_erp_sale_id:string|null}
 const initial:Profile={ruc:'',razon_social:'',nombre_comercial:'',direccion_matriz:'',
  establecimiento:'001',punto_emision:'001',ambiente:'pruebas',obligado_contabilidad:false,
  contribuyente_especial:'',activo:false,certificate_uploaded_at:null,certificate_sha256:null}
 export default function FlashFoodFiscalSettings(){
  const [profile,setProfile]=useState<Profile>(initial)
  const [merchants,setMerchants]=useState<Merchant[]>([])
+ const [jobs,setJobs]=useState<InvoiceJob[]>([])
  const [cert,setCert]=useState<File|null>(null)
  const [password,setPassword]=useState('')
  const [busy,setBusy]=useState(false)
@@ -28,9 +30,10 @@ export default function FlashFoodFiscalSettings(){
  }
  const refresh=useCallback(async()=>{
   try{
-   const [fiscal,partners]=await Promise.all([invoke('profile'),invoke('merchant_list')])
+   const [fiscal,partners,invoiceJobs]=await Promise.all([invoke('profile'),invoke('merchant_list'),invoke('invoice_queue')])
    setProfile({...initial,...(fiscal.profile||{})})
    setMerchants(partners.rows||[])
+   setJobs(invoiceJobs.rows||[])
   }catch(e){setError(e instanceof Error?e.message:'No se pudo consultar configuración fiscal')}
  },[])
  useEffect(()=>{queueMicrotask(()=>{void refresh()})},[refresh])
@@ -134,6 +137,19 @@ export default function FlashFoodFiscalSettings(){
     </div>
     <button disabled={busy} onClick={()=>void saveMerchant(m)} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Guardar configuración del negocio</button>
    </div>)}</div>
+  </div>
+  <div className="rounded-2xl border bg-white p-5">
+    <div className="flex items-center justify-between gap-2">
+      <h2 className="text-lg font-extrabold">Comprobantes pendientes</h2>
+      <button onClick={()=>void refresh()} aria-label="Actualizar comprobantes"><RefreshCw size={18}/></button>
+    </div>
+    <p className="mt-2 text-sm text-slate-600">Solicitudes fiscales preparadas por pedidos. Ninguna se emite sin enlazar y validar el facturador correspondiente.</p>
+    {!jobs.length&&<p className="mt-3 text-sm text-slate-500">Aún no hay solicitudes fiscales registradas.</p>}
+    <div className="mt-4 space-y-2">{jobs.map(job=><div key={job.id} className="rounded-xl border px-4 py-3">
+      <p className="text-sm font-semibold">{job.issuer_type==='merchant_products'?'Productos del negocio':'Servicio FlashFood'} · {job.status}</p>
+      <p className="mt-1 text-xs text-slate-500">Pedido {job.order_id.slice(0,8)} · {new Date(job.created_at).toLocaleString('es-EC')}</p>
+      {job.last_error&&<p className="mt-1 text-xs text-red-700">{job.last_error}</p>}
+    </div>)}</div>
   </div>
  </section>
 }
