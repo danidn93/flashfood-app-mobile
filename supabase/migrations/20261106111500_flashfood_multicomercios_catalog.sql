@@ -203,13 +203,13 @@ grant execute on function public.flashfood_erp_import_catalog(jsonb) to service_
 create or replace function public.flashfood_erp_public_restaurants()
 returns jsonb
 language sql stable security definer set search_path=''
-as $
+as $catalog$
  select coalesce(jsonb_agg(jsonb_build_object(
   'local_id',l.id,'restaurante',l.nombre,
   'nombre_comercial',l.nombre_comercial,
   'sucursal_id',s.id,'sucursal',s.nombre,'direccion',s.direccion,
   'telefono',s.telefono,'lat',s.lat,'lng',s.lng,
-  'abierto',coalesce(s.abierto,true),
+  'abierto',coalesce(s.abierto,true) and coalesce(c.abierto,true),
   'acepta_pedidos',bc.accepting_orders,
   'logo_url',c.logo_url,'hero_bg_url',c.hero_bg_url
  ) order by l.nombre,s.nombre),'[]'::jsonb)
@@ -218,17 +218,17 @@ as $
  join public.sucursales s on s.id=bc.sucursal_id
  left join public.configuracion c on c.sucursal_id=s.id
  where bc.published=true and l.activo=true and s.activo=true
-$;
+$catalog$;
 revoke all on function public.flashfood_erp_public_restaurants() from public;
 grant execute on function public.flashfood_erp_public_restaurants() to anon,authenticated,service_role;
 
 -- Excluir todos los espejos ERP del catálogo legado para respetar publicación/despublicación.
 create or replace function public.flashfood_erp_mirror_branch_ids()
 returns jsonb language sql stable security definer set search_path=''
-as $
+as $catalog$
  select coalesce(jsonb_agg(sucursal_id),'[]'::jsonb)
  from public.flashfood_erp_catalog_branches
-$;
+$catalog$;
 revoke all on function public.flashfood_erp_mirror_branch_ids() from public;
 grant execute on function public.flashfood_erp_mirror_branch_ids() to anon,authenticated,service_role;
 commit;
