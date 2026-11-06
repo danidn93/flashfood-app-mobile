@@ -39,10 +39,7 @@ Deno.serve(async req=>{
     }).eq('id',order.id).eq('payment_status','pending').eq('status','pending').select('id,fulfillment').maybeSingle()
     if(updateError)throw updateError
     if(updated){
-      if(updated.fulfillment==='delivery'){
-        const {error:dispatchError}=await db.rpc('flashfood_assign_driver',{p_order_id:updated.id})
-        if(dispatchError)console.error('Pago aprobado; despacho pendiente',dispatchError.message)
-      }
+      // El repartidor se busca después de que el restaurante confirme "Listo".
       try{
         const {error:ledgerError}=await db.rpc('flashfood_stage_card_obligations',{p_order_id:updated.id})
         if(ledgerError)throw ledgerError
