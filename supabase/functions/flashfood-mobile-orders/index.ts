@@ -122,7 +122,11 @@ Deno.serve(async req => {
       if(catalogError)throw catalogError
       const {data:erpCatalog,error:erpCatalogError}=await db.rpc('flashfood_erp_public_restaurants')
       if(erpCatalogError)throw erpCatalogError
-      const permitted=[...(Array.isArray(catalog)?catalog:[]),...(Array.isArray(erpCatalog)?erpCatalog:[])]
+      const {data:mirrorIds,error:mirrorError}=await db.rpc('flashfood_erp_mirror_branch_ids')
+      if(mirrorError)throw mirrorError
+      const mirrored=new Set(Array.isArray(mirrorIds)?mirrorIds:[])
+      const permitted=[...(Array.isArray(catalog)?catalog.filter(x=>!mirrored.has(x.sucursal_id)):[]),
+        ...(Array.isArray(erpCatalog)?erpCatalog:[])]
       const branch=permitted.find(x=>x.sucursal_id===body.branch_id)
       if(!branch||!branch.acepta_pedidos||!branch.abierto)return fail('La sucursal está cerrada o no admite pedidos',409)
       const {data:erpLink,error:erpLinkError}=await db.from('flashfood_erp_catalog_branches')
