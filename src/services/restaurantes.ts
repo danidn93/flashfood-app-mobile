@@ -71,14 +71,19 @@ export async function obtenerRestaurantes(): Promise<Restaurante[]> {
   }
 
   // Agregar el espejo del ERP sin exponer IDs del ERP ni usar una segunda sesión Supabase.
-  const {data:erpRows,error:erpError}=await supabase.rpc('flashfood_erp_public_restaurants')
-  if(erpError)throw new Error('No se pudo leer catálogo de Multicomercios: '+erpError.message)
-  const {data:mirrorIds,error:mirrorError}=await supabase.rpc('flashfood_erp_mirror_branch_ids')
-  if(mirrorError)throw new Error('No se pudieron verificar los restaurantes importados: '+mirrorError.message)
-  const mirrors=new Set(Array.isArray(mirrorIds)?mirrorIds as string[]:[])
-  const legacy=((data ?? []) as RestauranteGlobalDB[]).filter(x=>!mirrors.has(x.sucursal_id))
-  const erp=(Array.isArray(erpRows)?erpRows:[]) as RestauranteGlobalDB[]
-  const catalogo=[...legacy,...erp]
+  // Mantener el catálogo de Locales disponible aunque todavía falte instalar las RPC del ERP.
+  const erpResult = await supabase.rpc('flashfood_erp_public_restaurants')
+  let erpCatalog: RestauranteGlobalDB[] = []
+  let mirrored = new Set<string>()
+  if (!erpResult.error) {
+    const mirrorResult = await supabase.rpc('flashfood_erp_mirror_branch_ids')
+    if (!mirrorResult.error) {
+      erpCatalog = Array.isArray(erpResult.data) ? erpResult.data as RestauranteGlobalDB[] : []
+      mirrored = new Set(Array.isArray(mirrorResult.data) ? mirrorResult.data as string[] : [])
+    } else console.warn('Catálogo ERP sin mapeo de sucursales:', mirrorResult.error.message)
+  } else console.warn('Catálogo ERP no instalado:', erpResult.error.message)
+  const existingCatalog = ((data ?? []) as RestauranteGlobalDB[]).filter(x => !mirrored.has(x.sucursal_id))
+  const catalogo = [...existingCatalog, ...erpCatalog]
 
   if (catalogo.length === 0) {
     return []
