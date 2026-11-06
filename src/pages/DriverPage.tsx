@@ -60,9 +60,10 @@ export default function DriverPage(){
   finally{setSaving(false)}
  }
  const active=orders.find(o=>o.status==='accepted'||o.status==='picked_up')
+ const activeId=active?.id
  // Foreground-only tracking. Stop immediately when hidden, unmounted or no accepted delivery.
  useEffect(()=>{
-  if(!active||!navigator.geolocation)return
+  if(!activeId||!navigator.geolocation)return
   let watch:number|null=null
   let last=0
   const start=()=>{
@@ -74,7 +75,7 @@ export default function DriverPage(){
     const c=p.coords
     setGps({lat:c.latitude,lng:c.longitude,accuracy:c.accuracy})
     void supabase.functions.invoke('flashfood-mobile-orders',{body:{
-     action:'driver_location',order_id:active.id,latitude:c.latitude,longitude:c.longitude,accuracy_m:c.accuracy,
+     action:'driver_location',order_id:activeId,latitude:c.latitude,longitude:c.longitude,accuracy_m:c.accuracy,
     }}).then(({error:callError,data})=>{
       if(callError||!data?.ok)console.warn('GPS no enviado:',callError?.message||data?.error)
     })
@@ -85,7 +86,7 @@ export default function DriverPage(){
   document.addEventListener('visibilitychange',visibility)
   start()
   return ()=>{stop();document.removeEventListener('visibilitychange',visibility)}
- },[active?.id])
+ },[activeId])
  const locate=()=>{
   if(!navigator.geolocation){setError('Ubicación no disponible');return}
   navigator.geolocation.getCurrentPosition(p=>setGps({lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy}),e=>setError(e.message),{enableHighAccuracy:true,timeout:12000})
