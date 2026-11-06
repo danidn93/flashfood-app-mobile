@@ -46,12 +46,30 @@ Deno.serve(async(req)=>{
    const {data:branches,error:branchesError}=await db.from('flashfood_erp_catalog_branches')
     .select('erp_business_id,erp_branch_id,sucursal_id,published,accepting_orders,last_synced_at')
    if(branchesError)throw branchesError
+   const branchIds=(branches||[]).map(b=>b.sucursal_id)
+   const {data:coordinates,error:coordinatesError}=branchIds.length
+     ? await db.from('sucursales').select('id,lat,lng,nombre').in('id',branchIds)
+     : {data:[],error:null}
+   if(coordinatesError)throw coordinatesError
+   const {data:configs,error:configsError}=branchIds.length
+     ? await db.from('configuracion').select('sucursal_id,lat,lng').in('sucursal_id',branchIds)
+     : {data:[],error:null}
+   if(configsError)throw configsError
+   const configMap=new Map((configs||[]).map(c=>[c.sucursal_id,c]))
+   const branchMap=new Map((coordinates||[]).map(c=>[c.id,c]))
+   const branchResults=(branches||[]).map(branch=>{
+     const actual=branchMap.get(branch.sucursal_id)
+     const settings=configMap.get(branch.sucursal_id)
+     return {...branch,nombre:actual?.nombre||'Sucursal',
+       lat:actual?.lat??settings?.lat??null,
+       lng:actual?.lng??settings?.lng??null}
+   })
    const synced=new Map((local.data||[]).map(b=>[b.erp_business_id,b]))
    return respond({ok:true,businesses:(Array.isArray(remote.businesses)?remote.businesses:[]).map((item)=>{
     const b=item as Record<string,unknown>,id=String(b.id)
     return {...b,local_id:synced.get(id)?.local_id||null,
       synced_at:synced.get(id)?.last_synced_at||null,
-      branches:(branches||[]).filter(x=>x.erp_business_id===id)}
+      branches:branchResults.filter(x=>x.erp_business_id===id)}
    })})
   }
   if(action==='sync'){
@@ -77,6 +95,25 @@ Deno.serve(async(req)=>{
    const {data,error}=await db.rpc('flashfood_erp_import_catalog',{p_payload:payload})
    if(error)throw error
    return respond({ok:true,result:data})
+  }
+  if(action==='branch_coordinates'){
+   if(!uuid(body.branch_id))return fail('Sucursal ERP inválida')
+   const lat=body.lat,lng=body.lng
+   if(typeof lat!=='number'||!Number.isFinite(lat)||lat < -90||lat > 90
+     ||typeof lng!=='number'||!Number.isFinite(lng)||lng < -180||lng > 180)
+     return fail('Las coordenadas deben ser números válidos')
+   const {data:linked,error:linkedError}=await db.from('flashfood_erp_catalog_branches')
+     .select('sucursal_id').eq('erp_branch_id',body.branch_id).maybeSingle()
+   if(linkedError)throw linkedError
+   if(!linked)return fail('No existe la sucursal importada en FlashFood',404)
+   const {error:coordsError}=await db.from('sucursales').update({lat,lng,updated_at:new Date().toISOString()})
+     .eq('id',linked.sucursal_id)
+   if(coordsError)throw coordsError
+   const {error:configError}=await db.from('configuracion').upsert({
+     sucursal_id:linked.sucursal_id,lat,lng,updated_at:new Date().toISOString(),
+   },{onConflict:'sucursal_id'})
+   if(configError)throw configError
+   return respond({ok:true,coordinates:{lat,lng}})
   }
   if(action==='branch_update'){
    if(!uuid(body.branch_id)||typeof body.published!=='boolean'||typeof body.accepting_orders!=='boolean')
