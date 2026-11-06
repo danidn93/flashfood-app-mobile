@@ -61,7 +61,7 @@ Deno.serve(async(req)=>{
    const enabled=(Array.isArray(remote.businesses)?remote.businesses:[])
      .find((b)=>b && typeof b==='object' && (b as Record<string,unknown>).id===body.business_id) as Record<string,unknown>|undefined
    if(!enabled)return fail('Negocio no disponible en ERP',404)
-   if(enabled.flashfood_catalogo_habilitado!==true){
+   if(enabled.flashfood_catalogo_habilitado!==true||enabled.activo!==true){
     const {data:existing,error:findError}=await db.from('flashfood_erp_catalog_businesses')
       .select('erp_business_id').eq('erp_business_id',body.business_id).maybeSingle()
     if(findError)throw findError
@@ -83,6 +83,18 @@ Deno.serve(async(req)=>{
     return fail('Datos de publicación inválidos')
    if(body.accepting_orders===true&&body.published!==true)
     return fail('No se pueden aceptar pedidos de una sucursal oculta')
+   if(body.published===true){
+    const {data:branchOwner,error:ownerError}=await db.from('flashfood_erp_catalog_branches')
+      .select('erp_business_id').eq('erp_branch_id',body.branch_id).maybeSingle()
+    if(ownerError)throw ownerError
+    if(!branchOwner)return fail('Sucursal ERP no encontrada',404)
+    const remote=await erp('catalog_businesses')
+    const active=(Array.isArray(remote.businesses)?remote.businesses:[])
+      .some(x=>x&&typeof x==='object'&&(x as Record<string,unknown>).id===branchOwner.erp_business_id
+        &&(x as Record<string,unknown>).activo===true
+        &&(x as Record<string,unknown>).flashfood_catalogo_habilitado===true)
+    if(!active)return fail('El negocio dejó de estar autorizado en Multicomercios',403)
+   }
    const {data,error}=await db.from('flashfood_erp_catalog_branches')
     .update({published:body.published,accepting_orders:body.accepting_orders,last_synced_at:new Date().toISOString()})
     .eq('erp_branch_id',body.branch_id).select('erp_branch_id,published,accepting_orders').maybeSingle()
