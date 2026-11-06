@@ -109,11 +109,11 @@ Deno.serve(async req=>{
       return json({ok:true,message:'Datos fiscales guardados. Emisión desactivada hasta pruebas del SRI.'})
     }
     if(action==='invoice_queue'){
-      const {data,error}=await db.from('flashfood_invoice_jobs')
-        .select('id,order_id,issuer_type,source_local_id,remote_erp_business_id,remote_erp_sale_id,status,attempt_count,last_error,created_at')
+      const {data,error}=await db.from('flashfood_invoices')
+        .select('id,order_id,issuer_type,source_local_id,remote_erp_business_id,remote_erp_sale_id,sri_status,attempt_count,last_error,created_at')
         .order('created_at',{ascending:false}).limit(100)
       if(error)throw error
-      return json({ok:true,rows:data||[]})
+      return json({ok:true,rows:(data||[]).map(item=>({...item,status:item.sri_status}))})
     }
     if(action==='branch_list'){
       const {data:catalog,error:catalogError}=await db.rpc('flashfood_catalogo_restaurantes',{p_app_codigo:'flashfood_mobile'})
