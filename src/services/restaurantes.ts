@@ -73,10 +73,12 @@ export async function obtenerRestaurantes(): Promise<Restaurante[]> {
   // Agregar el espejo del ERP sin exponer IDs del ERP ni usar una segunda sesión Supabase.
   const {data:erpRows,error:erpError}=await supabase.rpc('flashfood_erp_public_restaurants')
   if(erpError)throw new Error('No se pudo leer catálogo de Multicomercios: '+erpError.message)
-  const legacy=(data ?? []) as RestauranteGlobalDB[]
+  const {data:mirrorIds,error:mirrorError}=await supabase.rpc('flashfood_erp_mirror_branch_ids')
+  if(mirrorError)throw new Error('No se pudieron verificar los restaurantes importados: '+mirrorError.message)
+  const mirrors=new Set(Array.isArray(mirrorIds)?mirrorIds as string[]:[])
+  const legacy=((data ?? []) as RestauranteGlobalDB[]).filter(x=>!mirrors.has(x.sucursal_id))
   const erp=(Array.isArray(erpRows)?erpRows:[]) as RestauranteGlobalDB[]
-  const existing=new Set(legacy.map(x=>x.sucursal_id))
-  const catalogo=[...legacy,...erp.filter(x=>!existing.has(x.sucursal_id))]
+  const catalogo=[...legacy,...erp]
 
   if (catalogo.length === 0) {
     return []
