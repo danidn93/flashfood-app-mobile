@@ -1,6 +1,7 @@
+import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 // Internal server-to-server synchronization. Never import into client-side code.
 // No secrets, no buyer fiscal data and no delivery GPS are sent to the ERP.
-type Db = any
+type Db = SupabaseClient
 export async function syncFlashFoodOrderToErp(db: Db, orderId: string, notify = false):
  Promise<{synced:boolean;reason?:string}> {
   const {data:o,error:e}=await db.from('flashfood_mobile_orders')
