@@ -35,7 +35,8 @@ const hm = (v:unknown) => {
 }
 const tariffAmount = (v:unknown) => typeof v==='number'&&Number.isFinite(v)&&v>=0?v:0
 const errorInfo = (error:unknown) => error instanceof Error?error.message:'Error de operación'
-const toMobile=(o:Record<string,any>)=>{
+type ExistingOrder = Record<string,unknown> & {payment_method?:string;status?:string;payment_review_status?:string;payment_status?:string;mobile_modality?:string;fulfillment?:string;delivery_address?:unknown;driver_id?:string;mobile_branch_id?:string;mobile_local_id?:string;products_total?:number;platform_surcharge?:number;grand_total?:number;customer_note?:string}
+const toMobile=(o:ExistingOrder)=>{
  const pm=o.payment_method==='payphone'?'tarjeta':o.payment_method==='cash'?'efectivo':
   o.payment_method==='transfer'?'transferencia':'local'
  const status=o.status==='in_transit'?'picked_up':o.status==='pending'
