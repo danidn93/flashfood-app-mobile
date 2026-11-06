@@ -12,13 +12,21 @@ const uuid = (v: unknown): v is string =>
 const coord = (v: unknown, max: number): v is number =>
   typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= max
 const round = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100
-const kmBetween = (aLat: number, aLng: number, bLat: number, bLng: number) => {
-  const radians = (d: number) => d * Math.PI / 180
-  const dLat = radians(bLat - aLat)
-  const dLng = radians(bLng - aLng)
-  const h = Math.sin(dLat / 2) ** 2 +
-    Math.cos(radians(aLat)) * Math.cos(radians(bLat)) * Math.sin(dLng / 2) ** 2
-  return 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(h)))
+const roadDistance = async (aLat: number, aLng: number, bLat: number, bLng: number) => {
+  const key = Deno.env.get('OPENROUTESERVICE_API_KEY')
+  if (!key) throw new Error('Falta OPENROUTESERVICE_API_KEY')
+  const response = await fetch('https://api.openrouteservice.org/v2/directions/driving-car', {
+    method: 'POST',
+    headers: { 'Authorization': key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ coordinates: [[aLng, aLat], [bLng, bLat]] }),
+    signal: AbortSignal.timeout(12000),
+  })
+  if (!response.ok) throw new Error('No se pudo calcular un recorrido vial (' + response.status + ')')
+  const data = await response.json()
+  const meters = Number(data?.routes?.[0]?.summary?.distance)
+  const seconds = Number(data?.routes?.[0]?.summary?.duration)
+  if (!Number.isFinite(meters) || meters < 0 || !Number.isFinite(seconds)) throw new Error('Ruta vial no disponible')
+  return { distance_km: meters / 1000, duration_minutes: Math.ceil(seconds / 60) }
 }
 const parseTime = (raw: unknown): number | null => {
   if (typeof raw !== 'string' || !/^\d{2}:\d{2}$/.test(raw)) return null
@@ -87,7 +95,8 @@ Deno.serve(async req => {
     if ([base, included, perKm, nightFee, rainFee].some(x => x === null))
       return reply({ ok: false, error: 'La tarifa global del delivery tiene valores inválidos' }, 503)
 
-    const distance = kmBetween(bLat, bLng, address.latitude, address.longitude)
+    const road = await roadDistance(bLat, bLng, address.latitude, address.longitude)
+    const distance = road.distance_km
     // Straight-line distance is only an estimate: road routing is not yet connected.
     const night = isNight(config.night_start, config.night_end)
     const rain = config.rain_enabled === true
@@ -97,12 +106,12 @@ Deno.serve(async req => {
     if (businessError) throw businessError
     const customerFee = businessSettings?.free_delivery === true ? 0 : round(base! + extra + (night ? nightFee! : 0) + (rain ? rainFee! : 0))
     return reply({
-      ok: true, estimated: true, distance_method: 'straight_line',
+      ok: true, estimated: false, distance_method: 'road', duration_minutes: road.duration_minutes,
       distance_km: round(distance), base_fee: base, included_km: included, additional_fee: extra,
       night_fee: night ? nightFee : 0, rain_fee: rain ? rainFee : 0,
       free_delivery: businessSettings?.free_delivery === true,
       delivery_fee: customerFee, currency: 'USD',
-      message: 'Estimación basada en distancia geográfica, no recorrido vial. El precio definitivo se validará en el checkout.',
+      message: 'Cotización calculada sobre vías transitables. Se confirmará nuevamente antes de crear el pedido.',
     })
   } catch (error) {
     console.error('flashfood-delivery-quote', error)
