@@ -4,10 +4,11 @@ import { supabase } from '../lib/supabase'
 import FlashFoodMobileOperations from '../components/marketplace/FlashFoodMobileOperations'
 import FlashFoodFiscalSettings from '../components/marketplace/FlashFoodFiscalSettings'
 import FlashFoodSettlements from '../components/marketplace/FlashFoodSettlements'
+import FlashFoodErpCatalog from '../components/marketplace/FlashFoodErpCatalog'
 import { assignBusinessRole, loadBusinesses, type Business } from '../services/roles'
 import { AlertCircle, Bike, ClipboardList, CreditCard, LayoutDashboard, RefreshCw, Settings, Store, Users, Search, Menu, X, Save, Pencil, Building2, ShieldCheck, ArrowLeft, BellRing, Send } from 'lucide-react'
 
-type Section = 'dashboard' | 'restaurants' | 'branches' | 'catalog' | 'orders' | 'drivers' | 'users' | 'roles' | 'availability' | 'settings' | 'notifications' | 'fiscal' | 'settlements'
+type Section = 'dashboard' | 'restaurants' | 'branches' | 'catalog' | 'orders' | 'drivers' | 'users' | 'roles' | 'availability' | 'settings' | 'notifications' | 'fiscal' | 'settlements' | 'erp_catalog'
 type Row = Record<string, unknown>
 type DeliveryConfig = {
   base_fee: number
@@ -29,6 +30,7 @@ const menu = [
   { id: 'restaurants', label: 'Restaurantes', icon: Store },
   { id: 'branches', label: 'Sucursales', icon: Building2 },
   { id: 'catalog', label: 'Catálogo publicado', icon: Store },
+  { id: 'erp_catalog', label: 'Catálogo Multicomercios', icon: Building2 },
   { id: 'availability', label: 'Activación marketplace', icon: ShieldCheck },
   { id: 'orders', label: 'Pedidos', icon: ClipboardList },
   { id: 'drivers', label: 'Repartidores', icon: Bike },
@@ -112,7 +114,7 @@ export default function SuperadminPage() {
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      if (section === 'fiscal' || section === 'settlements') { setRows([]); return }
+      if (section === 'fiscal' || section === 'settlements' || section === 'erp_catalog') { setRows([]); return }
       const result = await invoke(section, { page })
       if (section === 'dashboard') setDashboard(result.dashboard as Dashboard)
       else if (section === 'notifications') {
@@ -304,7 +306,7 @@ export default function SuperadminPage() {
             </div>
           ))}</div>}
         </section>
-      </div> : section === 'fiscal' ? <FlashFoodFiscalSettings /> : section === 'settlements' ? <FlashFoodSettlements /> : section === 'settings' ? <div className="space-y-6">
+      </div> : section === 'fiscal' ? <FlashFoodFiscalSettings /> : section === 'settlements' ? <FlashFoodSettlements /> : section === 'erp_catalog' ? <FlashFoodErpCatalog /> : section === 'settings' ? <div className="space-y-6">
         <section className="rounded-2xl border bg-white p-5 shadow-sm"><h2 className="text-lg font-bold">Recargo por pago con tarjeta</h2><p className="mt-1 text-sm text-slate-500">Porcentaje aplicado al pago con tarjeta. No se aplica a efectivo ni transferencia. Límite configurable: 25 %.</p><div className="mt-4 flex flex-wrap items-end gap-3"><label className="text-sm font-medium">Porcentaje (%)<input type="number" min="0" max="25" step="0.01" className="mt-1 block w-40 rounded-xl border p-3" value={cardFee} onChange={e => setCardFee(e.target.value)}/></label><button disabled={saving} onClick={() => void saveCardFee()} className="rounded-xl bg-orange-500 px-5 py-3 font-bold text-white disabled:opacity-50">Guardar recargo</button></div><p className="mt-2 text-xs text-slate-500">{cardSettingExists ? 'Configuración existente' : 'Aún no se ha guardado esta configuración'}. El checkout debe consultar esta clave para aplicarla.</p></section>
         <section className="rounded-2xl border bg-white p-5 shadow-sm space-y-5">
           <div><h2 className="text-lg font-bold">Tarifa global de delivery</h2><p className="mt-1 text-sm text-slate-500">Se aplica a todos los restaurantes. El envío se calcula según los kilómetros de recorrido desde la sucursal hasta el cliente, más los recargos aplicables.</p></div>
