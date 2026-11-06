@@ -224,9 +224,16 @@ Deno.serve(async req => {
       const next=String(body.status||'')
       if(!['accepted','picked_up','delivered'].includes(next))return fail('Transición inválida')
       const previous=next==='accepted'?'assigned':next==='picked_up'?'accepted':'picked_up'
-      const {data:updated,error}=await db.from('flashfood_mobile_orders').update({
-        status:next,updated_at:new Date().toISOString(),
-      }).eq('id',body.order_id).eq('assigned_driver_id',driver.id).eq('status',previous).select('*').maybeSingle()
+      const {data:current,error:currentError}=await db.from('flashfood_mobile_orders')
+        .select('id,payment_method,payment_status').eq('id',body.order_id).eq('assigned_driver_id',driver.id).eq('status',previous).maybeSingle()
+      if(currentError)throw currentError
+      if(!current)return fail('Pedido no asignado o transición inválida',409)
+      if(next==='delivered'&&current.payment_method==='efectivo'&&body.cash_collected!==true)
+        return fail('Debes confirmar que recibiste el efectivo antes de cerrar la entrega',409)
+      const changes:Record<string,unknown>={status:next,updated_at:new Date().toISOString()}
+      if(next==='delivered'&&current.payment_method==='efectivo')changes.payment_status='awaiting_verification'
+      const {data:updated,error}=await db.from('flashfood_mobile_orders').update(changes)
+        .eq('id',body.order_id).eq('assigned_driver_id',driver.id).eq('status',previous).select('*').maybeSingle()
       if(error)throw error
       if(!updated)return fail('Pedido no asignado o transición de estado inválida',409)
       if(next==='delivered'){
@@ -274,6 +281,18 @@ Deno.serve(async req => {
       if(error)throw error
       if(!order)return fail('Transferencia no pendiente',409)
       if(order.modality==='domicilio')await db.rpc('flashfood_mobile_assign_driver',{p_order_id:order.id})
+      return send({ok:true,order})
+    }
+
+    if(action==='verify_cash'){
+      if(!admin)return fail('Solo Superadmin puede conciliar efectivo',403)
+      if(!uuid(body.order_id)||body.approved!==true)return fail('Confirma el efectivo recibido contra la caja',400)
+      const {data:order,error}=await db.from('flashfood_mobile_orders').update({
+        payment_status:'paid',updated_at:new Date().toISOString(),
+      }).eq('id',body.order_id).eq('payment_method','efectivo').eq('status','delivered')
+        .eq('payment_status','awaiting_verification').select('*').maybeSingle()
+      if(error)throw error
+      if(!order)return fail('Efectivo no pendiente de conciliación',409)
       return send({ok:true,order})
     }
 
