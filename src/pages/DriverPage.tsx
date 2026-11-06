@@ -32,7 +32,7 @@ export default function DriverPage(){
   finally{setLoading(false)}
  },[])
  useEffect(()=>{
-  void reload()
+  queueMicrotask(()=>{void reload()})
   const timer=window.setInterval(()=>{if(document.visibilityState==='visible')void reload()},20000)
   return ()=>window.clearInterval(timer)
  },[reload])
