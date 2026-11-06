@@ -96,22 +96,48 @@ export default function DriverPage(){
   }catch(e){setError(e instanceof Error?e.message:'No se pudo responder')}
   finally{setSaving(false)}
  }
- // La proximidad se mide desde una ubicación reciente; nunca se mantiene
- // la geolocalización funcionando cuando el repartidor está desconectado.
+ // Mientras está Disponible, mantener una posición reciente para asignación
+ // por proximidad. El permiso es explícito; Desconectarme detiene el watcher.
  useEffect(()=>{
-  if(driver?.availability!=='available'||!navigator.geolocation)return
+  if(driver?.availability!=='available')return
   let alive=true
-  const report=()=>{
-   navigator.geolocation.getCurrentPosition(p=>{
-    if(!alive)return
-    void supabase.functions.invoke('flashfood-mobile-orders',{body:{
-      action:'driver_presence',latitude:p.coords.latitude,longitude:p.coords.longitude,
-    }})
-   },()=>{}, {enableHighAccuracy:true,maximumAge:15000,timeout:12000})
+  let watcherId:string|null=null
+  let browserTimer:number|null=null
+  const report=(latitude:number,longitude:number)=>{
+   if(!alive)return
+   void supabase.functions.invoke('flashfood-mobile-orders',{body:{
+     action:'driver_presence',latitude,longitude,
+   }}).then(({error:callError,data})=>{
+     if(callError||!data?.ok)console.warn('Presencia GPS no enviada:',callError?.message||data?.error)
+   })
   }
-  report()
-  const timer=window.setInterval(()=>{if(document.visibilityState==='visible')report()},30000)
-  return ()=>{alive=false;window.clearInterval(timer)}
+  if(Capacitor.isNativePlatform()){
+   void backgroundGPS.addWatcher({
+    backgroundMessage:'FlashFood mantiene tu ubicación para ofrecerte entregas cercanas. Desconéctate para detenerla.',
+    backgroundTitle:'Disponible para entregas FlashFood',
+    requestPermissions:true,stale:false,distanceFilter:10,
+   },(location,error)=>{
+    if(!alive)return
+    if(error){setError('GPS: '+(error.message||'No autorizado'));return}
+    if(location)report(location.latitude,location.longitude)
+   }).then(id=>{
+    if(alive)watcherId=id
+    else void backgroundGPS.removeWatcher({id})
+   }).catch(e=>{if(alive)setError('GPS de disponibilidad: '+String(e))})
+  }else if(navigator.geolocation){
+   const refresh=()=>navigator.geolocation.getCurrentPosition(
+     p=>report(p.coords.latitude,p.coords.longitude),()=>{},
+     {enableHighAccuracy:true,maximumAge:15000,timeout:12000})
+   refresh()
+   browserTimer=window.setInterval(()=>{
+     if(document.visibilityState==='visible')refresh()
+   },30000)
+  }
+  return ()=>{
+   alive=false
+   if(watcherId)void backgroundGPS.removeWatcher({id:watcherId})
+   if(browserTimer!==null)window.clearInterval(browserTimer)
+  }
  },[driver?.availability])
  const transition=async(o:Order)=>{
   setSaving(true);setError('');setNotice('')
