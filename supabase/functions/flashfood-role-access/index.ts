@@ -147,16 +147,57 @@ Deno.serve(async req=>{
    if(error)throw error
    return respond({ok:true})
   }
+  if(action==='driver_update_profile'){
+   if(!activeRoles.includes('delivery'))return bad('Requiere rol de repartidor',403)
+   const {data:existing,error:existingError}=await db.from('flashfood_drivers').select('id,photo_storage_path').eq('auth_user_id',caller).maybeSingle()
+   if(existingError)throw existingError
+   if(!existing)return bad('El Superadmin debe registrar primero al repartidor',404)
+   const vehicle=typeof body.vehicle_type==='string'?body.vehicle_type.trim():''
+   const plate=typeof body.vehicle_plate==='string'?body.vehicle_plate.trim().toUpperCase():''
+   if(!vehicle||vehicle.length>60||!/^[A-Z0-9-]{4,12}$/.test(plate))
+     return bad('Ingresa tipo de vehículo y placa válidos',400)
+   const {data:updated,error:updateError}=await db.from('flashfood_drivers')
+    .update({vehicle_type:vehicle,vehicle_plate:plate,updated_at:new Date().toISOString()})
+    .eq('id',existing.id).select('*').single()
+   if(updateError)throw updateError
+   return respond({ok:true,driver:updated})
+  }
+  if(action==='driver_upload_photo'){
+   if(!activeRoles.includes('delivery'))return bad('Requiere rol de repartidor',403)
+   const {data:existing,error:existingError}=await db.from('flashfood_drivers')
+      .select('id,photo_storage_path').eq('auth_user_id',caller).maybeSingle()
+   if(existingError)throw existingError
+   if(!existing)return bad('El Superadmin debe registrar primero al repartidor',404)
+   const base64=typeof body.image_base64==='string'?body.image_base64:''
+   const mime=typeof body.mime_type==='string'?body.mime_type:''
+   if(!['image/jpeg','image/png','image/webp'].includes(mime)||base64.length>4200000||base64.length<120
+      ||!/^[A-Za-z0-9+/]+={0,2}$/.test(base64))return bad('Foto no válida. Usa JPG, PNG o WebP de hasta 3 MB')
+   const raw=Uint8Array.from(atob(base64),c=>c.charCodeAt(0))
+   if(raw.byteLength>3145728)return bad('La foto supera 3 MB')
+   const extension=mime==='image/png'?'png':mime==='image/webp'?'webp':'jpg'
+   const path=caller+'/'+crypto.randomUUID()+'.'+extension
+   const {error:uploadError}=await db.storage.from('flashfood-driver-photos')
+      .upload(path,raw,{contentType:mime,upsert:false})
+   if(uploadError)throw uploadError
+   const {data:updated,error:updateError}=await db.from('flashfood_drivers')
+      .update({photo_storage_path:path,updated_at:new Date().toISOString()})
+      .eq('id',existing.id).select('*').single()
+   if(updateError){await db.storage.from('flashfood-driver-photos').remove([path]);throw updateError}
+   if(existing.photo_storage_path&&existing.photo_storage_path!==path)
+     await db.storage.from('flashfood-driver-photos').remove([existing.photo_storage_path])
+   return respond({ok:true,driver:updated})
+  }
   if(action==='driver_set_availability'){
    if(!activeRoles.includes('delivery'))return bad('Requiere rol de repartidor activo',403)
    const target=body.availability
    if(target!=='available'&&target!=='offline')return bad('Disponibilidad inválida')
-   const {data:driver,error:readError}=await db.from('flashfood_drivers').select('id,active,verified,availability').eq('auth_user_id',caller).maybeSingle()
+   const {data:driver,error:readError}=await db.from('flashfood_drivers').select('id,active,verified,availability,vehicle_type,vehicle_plate,photo_storage_path').eq('auth_user_id',caller).maybeSingle()
    if(readError)throw readError
    if(!driver)return bad('No existe perfil vinculado a tu cuenta',404)
    if(target==='available'&&(!driver.active||!driver.verified))return bad('El Superadmin debe activar y verificar tu perfil antes de conectarte',403)
+   if(target==='available'&&(!driver.photo_storage_path||!driver.vehicle_type||!driver.vehicle_plate))return bad('Sube tu foto y completa el tipo y placa del vehículo para conectarte',409)
    if(driver.availability==='busy')return bad('No puedes cambiar tu disponibilidad durante una entrega asignada',409)
-   const {data,error}=await db.from('flashfood_drivers').update({availability:target,updated_at:new Date().toISOString()}).eq('id',driver.id).select('id,active,verified,availability,full_name,phone,vehicle_type').single()
+   const {data,error}=await db.from('flashfood_drivers').update({availability:target,updated_at:new Date().toISOString()}).eq('id',driver.id).select('*').single()
    if(error)throw error
    return respond({ok:true,driver:data})
   }
