@@ -282,7 +282,7 @@ export default function CarritoPage() {
     setCreandoPedido(true)
     setMensaje('')
     try {
-      const signature = JSON.stringify({ branch:carrito.sucursalId, modality:carrito.modalidad, items:carrito.items, method:metodoPago, address:direccionActiva?.id, tip })
+      const signature = JSON.stringify({ branch:carrito.sucursalId, modality:carrito.modalidad, items:carrito.items, method:metodoPago, address:direccionActiva?.id, tip:propina })
       const previous = sessionStorage.getItem('ff:pending-order-idempotency')
       const saved = previous ? JSON.parse(previous) as {signature:string;key:string} : null
       const key = saved?.signature===signature ? saved.key : crypto.randomUUID()
