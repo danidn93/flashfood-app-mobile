@@ -37,7 +37,7 @@ const url64=(input:Uint8Array)=>btoa(String.fromCharCode(...input)).replace(/\+/
 const encode=(value:unknown)=>url64(new TextEncoder().encode(JSON.stringify(value)))
 const keyBytes=(pem:string)=>Uint8Array.from(atob(pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g,'')),c=>c.charCodeAt(0))
 
-async function pushToDevices(db:SupabaseClient,userIds:string[],orderId:string):Promise<void>{
+export async function pushToDevices(db:SupabaseClient,userIds:string[],orderId:string, title='Nuevo pedido FlashFood', message='Hay una compra nueva en tu negocio. Revisa los pedidos.', type='merchant_order'):Promise<void>{
  const {data,error}=await db.from('flashfood_push_devices')
   .select('id,user_id,token,platform').eq('active',true).in('user_id',userIds).limit(250)
  if(error)throw error
@@ -81,7 +81,6 @@ async function pushToDevices(db:SupabaseClient,userIds:string[],orderId:string):
   const sign=await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},key,new TextEncoder().encode(part))
   apnsToken=part+'.'+url64(new Uint8Array(sign))
  }
- const title='Nuevo pedido FlashFood',message='Hay una compra nueva en tu negocio. Revisa los pedidos.'
  const host=Deno.env.get('FLASHFOOD_APNS_ENVIRONMENT')==='production'
    ? 'https://api.push.apple.com':'https://api.sandbox.push.apple.com'
  const bundle=Deno.env.get('FLASHFOOD_APNS_BUNDLE_ID')||'com.flashfood.mobile'
@@ -91,14 +90,14 @@ async function pushToDevices(db:SupabaseClient,userIds:string[],orderId:string):
      ? await fetch('https://fcm.googleapis.com/v1/projects/'+encodeURIComponent(firebaseProject)+'/messages:send',{
        method:'POST',headers:{Authorization:'Bearer '+firebaseToken,'Content-Type':'application/json'},
        body:JSON.stringify({message:{token:device.token,notification:{title,body:message},
-         data:{type:'merchant_order',order_id:orderId}}}),
+         data:{type,order_id:orderId}}}),
        signal:AbortSignal.timeout(10000),
       })
      : await fetch(host+'/3/device/'+encodeURIComponent(device.token),{
        method:'POST',headers:{authorization:'bearer '+apnsToken,'apns-topic':bundle,
          'apns-push-type':'alert','apns-priority':'10','content-type':'application/json'},
        body:JSON.stringify({aps:{alert:{title,body:message},sound:'default'},
-         type:'merchant_order',order_id:orderId}),
+         type,order_id:orderId}),
        signal:AbortSignal.timeout(10000),
       })
    if(!response.ok){
