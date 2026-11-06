@@ -5,7 +5,14 @@ type Branch={erp_branch_id:string;sucursal_id:string;published:boolean;accepting
 type Business={id:string;nombre:string;nombre_comercial:string|null;flashfood_catalogo_habilitado:boolean;local_id:string|null;synced_at:string|null;branches:Branch[]}
 async function request(action:string,params:Record<string,unknown>={}):Promise<Record<string,unknown>>{
  const {data,error}=await supabase.functions.invoke('flashfood-catalog-sync',{body:{action,...params}})
- if(error)throw new Error(error.message)
+ if(error){
+  const response=(error as {context?:unknown}).context
+  if(response instanceof Response){
+   const details=await response.clone().json().catch(()=>null) as {error?:string}|null
+   if(details?.error)throw new Error(details.error)
+  }
+  throw new Error(error.message)
+ }
  if(!data?.ok)throw new Error(data?.error||'Error de sincronización')
  return data as Record<string,unknown>
 }
