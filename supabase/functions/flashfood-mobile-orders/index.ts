@@ -348,7 +348,7 @@ Deno.serve(async req => {
       if(!order)return fail('Pedido no encontrado',404)
       if(order.customer_id!==userId&&!admin&&(!driver||order.driver_id!==driver.id))return fail('No autorizado',403)
       let position=null
-      if(['accepted','in_transit'].includes(order.status)&&order.driver_id){
+      if(['assigned','accepted','in_transit'].includes(order.status)&&order.driver_id){
         const {data,error:locationError}=await db.from('flashfood_driver_positions')
           .select('latitude,longitude,accuracy_m,recorded_at').eq('driver_id',order.driver_id).eq('order_id',order.id).maybeSingle()
         if(locationError)throw locationError
@@ -419,7 +419,7 @@ Deno.serve(async req => {
       if(!driverRole||!driver?.active||!driver.verified)return fail('Repartidor no autorizado',403)
       if(!uuid(body.order_id)||!originOK(body.latitude,body.longitude))return fail('Ubicación inválida')
       const {data:order,error:readError}=await db.from('flashfood_orders').select('id')
-        .eq('id',body.order_id).eq('driver_id',driver.id).in('status',['accepted','in_transit']).maybeSingle()
+        .eq('id',body.order_id).eq('driver_id',driver.id).in('status',['assigned','accepted','in_transit']).maybeSingle()
       if(readError)throw readError
       if(!order)return fail('La ubicación solo puede compartirse durante una entrega aceptada',403)
       const {error}=await db.from('flashfood_driver_positions').upsert({
