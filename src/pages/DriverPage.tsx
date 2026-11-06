@@ -4,6 +4,9 @@ import { Bike, CheckCircle2, CircleOff, LocateFixed, MapPin, RefreshCw, ShieldAl
 import { roleRequest } from '../services/roles'
 import { supabase } from '../lib/supabase'
 import FlashFoodOrderChat from '../components/marketplace/FlashFoodOrderChat'
+import {Capacitor,registerPlugin} from '@capacitor/core'
+import type {BackgroundGeolocationPlugin} from '@capacitor-community/background-geolocation'
+const backgroundGPS=registerPlugin<BackgroundGeolocationPlugin>('BackgroundGeolocation')
 
 type Driver={id:string;full_name:string;phone:string|null;vehicle_type:string|null;vehicle_plate:string|null;photo_storage_path:string|null;availability:'offline'|'available'|'busy';active:boolean;verified:boolean}
 type Order={id:string;payment_method:string;status:'assigned'|'accepted'|'picked_up';address_snapshot:Record<string,unknown>|null;route_km:number|null;total:number;created_at:string}
@@ -121,31 +124,59 @@ export default function DriverPage(){
  }
  const active=orders.find(o=>o.status==='assigned'||o.status==='accepted'||o.status==='picked_up')
  const activeId=active?.id
- // Foreground-only tracking. Stop immediately when hidden, unmounted or no accepted delivery.
+ // Native Capacitor tracks the accepted delivery with the screen locked,
+ // with a visible system location indication. Browser mode remains foreground-only.
  useEffect(()=>{
-  if(!activeId||!navigator.geolocation)return
-  let watch:number|null=null
+  if(!activeId)return
+  let mounted=true
+  let watcherId:string|null=null
+  let browserWatch:number|null=null
   let last=0
-  const start=()=>{
-   if(document.visibilityState!=='visible'||watch!==null)return
-   watch=navigator.geolocation.watchPosition(p=>{
-    const now=Date.now()
-    if(now-last<15000)return
-    last=now
-    const c=p.coords
+  const publish=(c:{latitude:number;longitude:number;accuracy:number})=>{
+    if(!mounted||Date.now()-last<12000)return
+    last=Date.now()
     setGps({lat:c.latitude,lng:c.longitude,accuracy:c.accuracy})
     void supabase.functions.invoke('flashfood-mobile-orders',{body:{
-     action:'driver_location',order_id:activeId,latitude:c.latitude,longitude:c.longitude,accuracy_m:c.accuracy,
+      action:'driver_location',order_id:activeId,latitude:c.latitude,longitude:c.longitude,accuracy_m:c.accuracy,
     }}).then(({error:callError,data})=>{
       if(callError||!data?.ok)console.warn('GPS no enviado:',callError?.message||data?.error)
     })
-   },e=>setError('GPS: '+e.message),{enableHighAccuracy:true,maximumAge:5000,timeout:15000})
   }
-  const stop=()=>{if(watch!==null){navigator.geolocation.clearWatch(watch);watch=null}}
-  const visibility=()=>{if(document.visibilityState==='visible')start();else stop()}
-  document.addEventListener('visibilitychange',visibility)
-  start()
-  return ()=>{stop();document.removeEventListener('visibilitychange',visibility)}
+  if(Capacitor.isNativePlatform()){
+    void backgroundGPS.addWatcher({
+      backgroundMessage:'FlashFood comparte tu ubicación mientras realizas una entrega. Pulsa para abrir la aplicación.',
+      backgroundTitle:'Entrega FlashFood en curso',
+      requestPermissions:true,stale:false,distanceFilter:15,
+    },(location,error)=>{
+      if(!mounted)return
+      if(error){setError('Permiso GPS: '+(error.message||'Sin acceso a ubicación'));return}
+      if(location)publish({latitude:location.latitude,longitude:location.longitude,accuracy:location.accuracy})
+    }).then(id=>{
+      if(mounted)watcherId=id
+      else void backgroundGPS.removeWatcher({id})
+    }).catch(e=>{if(mounted)setError('GPS en segundo plano: '+String(e))})
+  }else if(navigator.geolocation){
+    const startBrowser=()=>{
+      if(browserWatch!==null||document.visibilityState!=='visible')return
+      browserWatch=navigator.geolocation.watchPosition(p=>publish(p.coords),
+        e=>setError('GPS: '+e.message),{enableHighAccuracy:true,maximumAge:5000,timeout:15000})
+    }
+    const visibility=()=>{
+      if(document.visibilityState==='visible')startBrowser()
+      else if(browserWatch!==null){navigator.geolocation.clearWatch(browserWatch);browserWatch=null}
+    }
+    document.addEventListener('visibilitychange',visibility)
+    startBrowser()
+    return ()=>{
+      mounted=false
+      if(browserWatch!==null)navigator.geolocation.clearWatch(browserWatch)
+      document.removeEventListener('visibilitychange',visibility)
+    }
+  }
+  return ()=>{
+    mounted=false
+    if(watcherId)void backgroundGPS.removeWatcher({id:watcherId})
+  }
  },[activeId])
  const locate=()=>{
   if(!navigator.geolocation){setError('Ubicación no disponible');return}
@@ -218,7 +249,7 @@ export default function DriverPage(){
     })}
    </section>
    <section className="rounded-2xl bg-white p-5 shadow-sm"><h2 className="font-bold">GPS durante la entrega</h2>
-    <p className="mt-1 text-sm text-gray-500">{active?'Se comparte mientras este pedido esté aceptado y la app permanezca visible.':'No se comparte ubicación: no tienes entregas aceptadas.'}</p>
+    <p className="mt-1 text-sm text-gray-500">{active?'Se comparte durante la entrega activa. En iPhone/Android instalado se utiliza el GPS nativo al bloquear la pantalla.':'No se comparte ubicación: no tienes entregas aceptadas.'}</p>
     <button type="button" onClick={locate} className="mt-4 flex items-center gap-2 rounded-xl border border-orange-200 px-4 py-3 font-semibold text-orange-600"><LocateFixed size={18}/>Ver mi ubicación</button>
     {gps&&<p className="mt-3 text-xs text-gray-500">Lat {gps.lat.toFixed(6)}, Lng {gps.lng.toFixed(6)} · precisión {Math.round(gps.accuracy)} m</p>}
    </section>
