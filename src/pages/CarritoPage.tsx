@@ -284,7 +284,7 @@ export default function CarritoPage() {
     setCreandoPedido(true)
     setMensaje('')
     try {
-      const signature = JSON.stringify({ branch:carrito.sucursalId, modality:carrito.modalidad, items:carrito.items, method:metodoPago, address:direccionActiva?.id, tip:propina })
+      const signature = JSON.stringify({ branch:carrito.sucursalId, modality:carrito.modalidad, items:carrito.items, method:metodoPago, address:direccionActiva?.id, tip:propina, billing:facturacion })
       const previous = sessionStorage.getItem('ff:pending-order-idempotency')
       const saved = previous ? JSON.parse(previous) as {signature:string;key:string} : null
       const key = saved?.signature===signature ? saved.key : crypto.randomUUID()
@@ -292,7 +292,8 @@ export default function CarritoPage() {
       const { data, error } = await supabase.functions.invoke('flashfood-mobile-orders', {
         body: { action:'create', idempotency_key:key, branch_id:carrito.sucursalId, modalidad:carrito.modalidad,
           payment_method:metodoPago, address_id:esDelivery?direccionActiva?.id:null, items:carrito.items,
-          tip:esDelivery?propina:0, note:nota, expected_total:desglose.total },
+          tip:esDelivery?propina:0, note:nota, expected_total:desglose.total,
+          billing:facturacion },
       })
       if (error) throw new Error(error.message)
       if (!data?.ok) throw new Error(data?.error || 'No fue posible crear el pedido')
