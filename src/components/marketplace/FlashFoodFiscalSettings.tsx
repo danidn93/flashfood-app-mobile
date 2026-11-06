@@ -9,6 +9,7 @@ type Profile={
  certificate_uploaded_at:string|null;certificate_sha256:string|null
 }
 type Merchant={id:string;nombre:string;origen:'local'|'multicomercios';negocio_origen_id:string|null;facturacion_flashfood_habilitada:boolean}
+type BranchLink={flashfood_branch_id:string;flashfood_local_id:string;name:string;erp_business_id:string;erp_branch_id:string}
 type InvoiceJob={id:string;order_id:string;issuer_type:string;status:string;created_at:string;last_error:string|null;remote_erp_sale_id:string|null}
 const initial:Profile={ruc:'',razon_social:'',nombre_comercial:'',direccion_matriz:'',
  establecimiento:'001',punto_emision:'001',ambiente:'pruebas',obligado_contabilidad:false,
@@ -17,6 +18,7 @@ export default function FlashFoodFiscalSettings(){
  const [profile,setProfile]=useState<Profile>(initial)
  const [merchants,setMerchants]=useState<Merchant[]>([])
  const [jobs,setJobs]=useState<InvoiceJob[]>([])
+ const [branchLinks,setBranchLinks]=useState<BranchLink[]>([])
  const [cert,setCert]=useState<File|null>(null)
  const [password,setPassword]=useState('')
  const [busy,setBusy]=useState(false)
@@ -30,10 +32,11 @@ export default function FlashFoodFiscalSettings(){
  }
  const refresh=useCallback(async()=>{
   try{
-   const [fiscal,partners,invoiceJobs]=await Promise.all([invoke('profile'),invoke('merchant_list'),invoke('invoice_queue')])
+   const [fiscal,partners,invoiceJobs,branches]=await Promise.all([invoke('profile'),invoke('merchant_list'),invoke('invoice_queue'),invoke('branch_list')])
    setProfile({...initial,...(fiscal.profile||{})})
    setMerchants(partners.rows||[])
    setJobs(invoiceJobs.rows||[])
+   setBranchLinks(branches.rows||[])
   }catch(e){setError(e instanceof Error?e.message:'No se pudo consultar configuración fiscal')}
  },[])
  useEffect(()=>{queueMicrotask(()=>{void refresh()})},[refresh])
@@ -65,6 +68,14 @@ export default function FlashFoodFiscalSettings(){
    setNotice('Certificado guardado en almacenamiento privado. La emisión sigue desactivada hasta su validación.')
    await refresh()
   }finally{setPassword('')}
+ })
+ const updateBranch=(id:string,key:keyof BranchLink,value:string)=>
+  setBranchLinks(old=>old.map(x=>x.flashfood_branch_id===id?{...x,[key]:value}:x))
+ const saveBranch=(b:BranchLink)=>run(async()=>{
+  await invoke('branch_save',{branch_id:b.flashfood_branch_id,local_id:b.flashfood_local_id,
+   erp_business_id:b.erp_business_id,erp_branch_id:b.erp_branch_id})
+  setNotice('Vinculación de sucursal registrada.')
+  await refresh()
  })
  const updateMerchant=(id:string,key:keyof Merchant,value:unknown)=>{
   setMerchants(old=>old.map(x=>x.id===id?{...x,[key]:value}:x))
@@ -137,6 +148,23 @@ export default function FlashFoodFiscalSettings(){
     </div>
     <button disabled={busy} onClick={()=>void saveMerchant(m)} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Guardar configuración del negocio</button>
    </div>)}</div>
+  </div>
+  <div className="rounded-2xl border bg-white p-5">
+    <h2 className="text-lg font-extrabold">Vinculación de sucursales con Multicomercios</h2>
+    <p className="mt-2 text-sm text-slate-600">Necesaria para avisar a empleados y reflejar liquidaciones en la sucursal correcta. Usa los UUID reales del ERP.</p>
+    <div className="mt-4 space-y-3">{branchLinks.filter(b=>merchants.some(m=>m.id===b.flashfood_local_id&&m.origen==='multicomercios'&&m.facturacion_flashfood_habilitada)).map(b=>(
+     <div key={b.flashfood_branch_id} className="rounded-xl border p-4">
+      <p className="font-semibold">{b.name}</p>
+      <p className="mt-1 text-xs text-slate-500">Sucursal FlashFood: {b.flashfood_branch_id}</p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+       <label className="text-sm">Negocio del ERP (UUID)<input value={b.erp_business_id} onChange={e=>updateBranch(b.flashfood_branch_id,'erp_business_id',e.target.value)}
+        placeholder="UUID negocio" className="mt-1 w-full rounded-lg border p-2"/></label>
+       <label className="text-sm">Sucursal del ERP (UUID)<input value={b.erp_branch_id} onChange={e=>updateBranch(b.flashfood_branch_id,'erp_branch_id',e.target.value)}
+        placeholder="UUID sucursal" className="mt-1 w-full rounded-lg border p-2"/></label>
+      </div>
+      <button disabled={busy} onClick={()=>void saveBranch(b)} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Guardar vinculación</button>
+     </div>
+    ))}</div>
   </div>
   <div className="rounded-2xl border bg-white p-5">
     <div className="flex items-center justify-between gap-2">
