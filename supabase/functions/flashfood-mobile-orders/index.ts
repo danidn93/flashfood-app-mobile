@@ -265,7 +265,7 @@ Deno.serve(async req => {
 
     if(action==='driver_orders'){
       if(!driverRole||!driver)return fail('No autorizado',403)
-      const {data,error}=await db.from('flashfood_orders').select('*').eq('assigned_driver_id',driver.id)
+      const {data,error}=await db.from('flashfood_orders').select('*').eq('driver_id',driver.id)
         .in('status',['assigned','accepted','in_transit']).order('created_at',{ascending:true})
       if(error)throw error
       return send({ok:true,orders:(data||[]).map(toMobile)})
@@ -278,15 +278,15 @@ Deno.serve(async req => {
       if(!['accepted','picked_up','delivered'].includes(next))return fail('Transición inválida')
       const previous=next==='accepted'?'assigned':next==='picked_up'?'accepted':'in_transit'
       const {data:current,error:currentError}=await db.from('flashfood_orders')
-        .select('id,payment_method,payment_status').eq('id',body.order_id).eq('assigned_driver_id',driver.id).eq('status',previous).maybeSingle()
+        .select('id,payment_method,payment_status').eq('id',body.order_id).eq('driver_id',driver.id).eq('status',previous).maybeSingle()
       if(currentError)throw currentError
       if(!current)return fail('Pedido no asignado o transición inválida',409)
       if(next==='delivered'&&current.payment_method==='cash'&&body.cash_collected!==true)
         return fail('Debes confirmar que recibiste el efectivo antes de cerrar la entrega',409)
       const changes:Record<string,unknown>={status:next==='picked_up'?'in_transit':next,updated_at:new Date().toISOString()}
-      if(next==='delivered'&&current.payment_method==='efectivo')changes.payment_review_status='awaiting_verification'
+      if(next==='delivered'&&current.payment_method==='cash')changes.payment_review_status='awaiting_verification'
       const {data:updated,error}=await db.from('flashfood_orders').update(changes)
-        .eq('id',body.order_id).eq('assigned_driver_id',driver.id).eq('status',previous).select('*').maybeSingle()
+        .eq('id',body.order_id).eq('driver_id',driver.id).eq('status',previous).select('*').maybeSingle()
       if(error)throw error
       if(!updated)return fail('Pedido no asignado o transición de estado inválida',409)
       if(next==='delivered'){
@@ -300,7 +300,7 @@ Deno.serve(async req => {
       if(!driverRole||!driver?.active||!driver.verified)return fail('Repartidor no autorizado',403)
       if(!uuid(body.order_id)||!originOK(body.latitude,body.longitude))return fail('Ubicación inválida')
       const {data:order,error:readError}=await db.from('flashfood_orders').select('id')
-        .eq('id',body.order_id).eq('assigned_driver_id',driver.id).in('status',['accepted','in_transit']).maybeSingle()
+        .eq('id',body.order_id).eq('driver_id',driver.id).in('status',['accepted','in_transit']).maybeSingle()
       if(readError)throw readError
       if(!order)return fail('La ubicación solo puede compartirse durante una entrega aceptada',403)
       const {error}=await db.from('flashfood_driver_positions').upsert({
@@ -360,7 +360,7 @@ Deno.serve(async req => {
         .eq('payment_review_status','awaiting_verification').select('*').maybeSingle()
       if(error)throw error
       if(!order)return fail('Efectivo no pendiente de conciliación',409)
-      return send({ok:true,order})
+      return send({ok:true,order:toMobile(order)})
     }
 
 
@@ -377,7 +377,7 @@ Deno.serve(async req => {
       if(!admin)return fail('Solo Superadmin puede registrar transferencias',403)
       if(!uuid(body.obligation_id)||!money(body.amount)||!body.amount||typeof body.reference!=='string'
          ||body.reference.trim().length<3||typeof body.transfer_date!=='string'
-         ||!/^\\d{4}-\\d{2}-\\d{2}$/.test(body.transfer_date))return fail('Ingresa importe, fecha y referencia bancaria válidos')
+         ||!/^\d{4}-\d{2}-\d{2}$/.test(body.transfer_date))return fail('Ingresa importe, fecha y referencia bancaria válidos')
       const {data:row,error}=await db.rpc('flashfood_record_transfer',{
         p_obligation_id:body.obligation_id,p_amount:body.amount,
         p_reference:body.reference.trim(),p_date:body.transfer_date,p_actor:userId,
