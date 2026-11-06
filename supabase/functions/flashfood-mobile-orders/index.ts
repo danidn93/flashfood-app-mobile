@@ -441,6 +441,35 @@ Deno.serve(async req => {
         accuracy_m:money(body.accuracy_m)?body.accuracy_m:null,recorded_at:new Date().toISOString(),
       },{onConflict:'driver_id'})
       if(error)throw error
+      // Solo notificar durante reparto, con GPS de precisión suficiente.
+      // El RPC vuelve a calcular distancia usando las coordenadas del pedido,
+      // y reclama la alerta atómicamente para evitar envíos duplicados.
+      if(typeof body.accuracy_m==='number'&&Number.isFinite(body.accuracy_m)){
+        try{
+          const {data:claim,error:claimError}=await db.rpc('flashfood_claim_arrival_alert',{
+            p_order_id:order.id,p_driver_id:driver.id,p_lat:body.latitude,
+            p_lng:body.longitude,p_accuracy_m:body.accuracy_m,
+          })
+          if(claimError)throw claimError
+          if(claim?.result==='claimed'){
+            let sent=false
+            try{
+              const count=await pushToDevices(db,[claim.customer_id],order.id,
+                '¡Tu pedido está muy cerca!',
+                'Tu repartidor está a menos de 500 metros de tu dirección de entrega.',
+                'delivery_nearby')
+              sent=count>0
+            }finally{
+              const {error:finishError}=await db.rpc('flashfood_finish_arrival_alert',{
+                p_order_id:order.id,p_sent:sent,
+              })
+              if(finishError)console.error('No se pudo finalizar alerta de proximidad:',finishError.message)
+            }
+          }
+        }catch(arrivalError){
+          console.error('Alerta 500 m pendiente:',errorInfo(arrivalError))
+        }
+      }
       return send({ok:true})
     }
 
