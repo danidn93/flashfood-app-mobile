@@ -46,8 +46,8 @@ begin
  end if;
  -- Reject stale or missing destination coordinates, never fallback to a guessed address.
  if jsonb_typeof(o.delivery_address) <> 'object'
-   or (o.delivery_address->>'latitude') !~ '^-?[0-9]+(\\.[0-9]+)?$'
-   or (o.delivery_address->>'longitude') !~ '^-?[0-9]+(\\.[0-9]+)?$' then
+   or (o.delivery_address->>'latitude') !~ '^-?[0-9]+([.][0-9]+)?$'
+   or (o.delivery_address->>'longitude') !~ '^-?[0-9]+([.][0-9]+)?$' then
    return jsonb_build_object('result','missing_destination');
  end if;
  v_dest_lat:=(o.delivery_address->>'latitude')::double precision;
