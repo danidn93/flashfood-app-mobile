@@ -69,11 +69,35 @@ Deno.serve(async req => {
 
     const { data: catalog, error: catalogError } = await db.rpc('flashfood_catalogo_restaurantes', { p_app_codigo: 'flashfood_mobile' })
     if (catalogError) throw catalogError
-    const branch = (Array.isArray(catalog) ? catalog : []).find(r => r.sucursal_id === input.branch_id)
-    if (!branch) return reply({ ok: false, error: 'La sucursal no está disponible en FlashFood' }, 404)
-    const bLat = Number(branch.lat), bLng = Number(branch.lng)
-    if (branch.lat === null || branch.lng === null || !coord(bLat, 90) || !coord(bLng, 180))
-      return reply({ ok: false, error: 'La sucursal aún no tiene coordenadas configuradas' }, 422)
+    const { data: erpCatalog, error: erpError } = await db.rpc('flashfood_erp_public_restaurants')
+    if (erpError) throw erpError
+    const { data: mirrored, error: mirroredError } = await db.rpc('flashfood_erp_mirror_branch_ids')
+    if (mirroredError) throw mirroredError
+    const erpIds = new Set<string>(Array.isArray(mirrored) ? mirrored as string[] : [])
+    const allowed = [
+      ...(Array.isArray(catalog) ? catalog.filter(r => !erpIds.has(r.sucursal_id)) : []),
+      ...(Array.isArray(erpCatalog) ? erpCatalog : []),
+    ]
+    const branch = allowed.find(r => r.sucursal_id === input.branch_id)
+    if (!branch || !branch.abierto || !branch.acepta_pedidos)
+      return reply({ ok: false, error: 'La sucursal está cerrada o no recibe pedidos en FlashFood' }, 409)
+
+    // La tabla configuracion conserva coordenadas independientes de sucursales.
+    // No sobrescribirlas con lat/lng nulos que pudiera traer el catálogo.
+    const { data: dbBranch, error: branchError } = await db.from('sucursales')
+      .select('id,lat,lng').eq('id', input.branch_id).maybeSingle()
+    if (branchError) throw branchError
+    if (!dbBranch) return reply({ ok: false, error: 'Sucursal no encontrada' }, 404)
+    const { data: branchConfig, error: configError } = await db.from('configuracion')
+      .select('lat,lng').eq('sucursal_id', input.branch_id).maybeSingle()
+    if (configError) throw configError
+    const branchLat = coord(dbBranch.lat, 90) ? dbBranch.lat
+      : coord(branchConfig?.lat, 90) ? branchConfig!.lat : null
+    const branchLng = coord(dbBranch.lng, 180) ? dbBranch.lng
+      : coord(branchConfig?.lng, 180) ? branchConfig!.lng : null
+    if (branchLat === null || branchLng === null)
+      return reply({ ok: false, error: 'La sucursal aún no tiene coordenadas configuradas en sucursales ni configuracion' }, 422)
+    const bLat = branchLat, bLng = branchLng
 
     const { data: available, error: availabilityError } = await db.rpc('flashfood_delivery_disponible')
     if (availabilityError) throw availabilityError
