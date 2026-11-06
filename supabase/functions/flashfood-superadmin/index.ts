@@ -108,6 +108,25 @@ Deno.serve(async req => {
       if (error) throw error
       return json({ ok: true, row: data })
     }
+    if (action === 'save_global_delivery') {
+      const value = body.delivery
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return fail('Tarifa inválida')
+      const tariff = value as Record<string, unknown>
+      const fields = ['base_fee', 'included_km', 'additional_km_fee', 'night_fee', 'rain_fee'] as const
+      for (const field of fields) {
+        if (typeof tariff[field] !== 'number' || !Number.isFinite(tariff[field]) || (tariff[field] as number) < 0 || (tariff[field] as number) > 10000) return fail('Valor inválido: ' + field)
+      }
+      if (typeof tariff.rain_enabled !== 'boolean') return fail('Estado de lluvia inválido')
+      for (const field of ['night_start', 'night_end']) {
+        if (typeof tariff[field] !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(tariff[field] as string)) return fail('Horario inválido: ' + field)
+      }
+      const payload = Object.fromEntries([...fields, 'rain_enabled', 'night_start', 'night_end'].map(key => [key, tariff[key]]))
+      const { data, error } = await db.from('flashfood_global_settings').upsert({
+        key: 'delivery_global_tariff', value: payload, updated_at: new Date().toISOString(),
+      }, { onConflict: 'key' }).select('key,value').single()
+      if (error) throw error
+      return json({ ok: true, row: data })
+    }
     if (action === 'save_card_surcharge') {
       const percent = body.percent
       if (typeof percent !== 'number' || !Number.isFinite(percent) || percent < 0 || percent > 25) return fail('Porcentaje inválido (0–25)')

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../lib/supabase'
-import { direccionSeleccionada, observarDireccion } from '../services/direcciones'
+import { direccionSeleccionada, observarDireccion, type DireccionEntrega } from '../services/direcciones'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ArrowRight, Bike, Check, ChevronRight,
@@ -170,17 +170,27 @@ export default function CarritoPage() {
   })
   const [propina, setPropina] = useState(0)
   const [otraPropina, setOtraPropina] = useState('')
-  // Se conectará con la cotización real del repartidor.
-  const [costoEnvio] = useState<number | null>(null)
+  const [costoEnvio, setCostoEnvio] = useState<number | null>(null)
+  const [direccionActiva, setDireccionActiva] = useState<DireccionEntrega | null>(null)
+  const [cotizando, setCotizando] = useState(false)
+  const [creandoPedido, setCreandoPedido] = useState(false)
+  const [payphoneHabilitado, setPayphoneHabilitado] = useState(false)
+  const [detalleCotizacion, setDetalleCotizacion] = useState('')
+  const [distanciaKm, setDistanciaKm] = useState<number | null>(null)
 
   useEffect(() => suscribirseAlCarrito(() => setCarrito(obtenerCarrito())), [])
   useEffect(() => {
+    void supabase.functions.invoke('flashfood-mobile-orders',{body:{action:'capabilities'}})
+      .then(({data,error})=>setPayphoneHabilitado(!error&&data?.ok&&data.payphone_enabled===true))
+  }, [])
+  useEffect(() => {
     let active = true
     const refresh = () => { void direccionSeleccionada().then(d => {
-      if (!active || !d) return
-      setDireccion(`${d.address_line}, ${d.city}`)
-      setReferencia(d.reference || '')
-    }).catch(()=>{}) }
+      if (!active) return
+      setDireccionActiva(d)
+      setDireccion(d ? `${d.address_line}, ${d.city}` : '')
+      setReferencia(d?.reference || '')
+    }).catch(()=>{ if(active)setDireccionActiva(null) }) }
     refresh()
     const remove = observarDireccion(refresh)
     return () => { active = false; remove() }
@@ -199,6 +209,42 @@ export default function CarritoPage() {
     document.addEventListener('visibilitychange', onFocus)
     return () => { active = false; document.removeEventListener('visibilitychange', onFocus) }
   }, [])
+
+  useEffect(() => {
+    let active = true
+    if (carrito?.modalidad !== 'domicilio' || !carrito.sucursalId) return
+    if (!direccionActiva) {
+      queueMicrotask(() => {
+        setCostoEnvio(null)
+        setDistanciaKm(null)
+        setDetalleCotizacion('Selecciona una dirección guardada para cotizar el envío.')
+      })
+      return
+    }
+    const cotizar = async () => {
+      setCotizando(true)
+      setCostoEnvio(null)
+      setDistanciaKm(null)
+      setDetalleCotizacion('')
+      try {
+        const { data, error } = await supabase.functions.invoke('flashfood-delivery-quote', {
+          body: { branch_id: carrito.sucursalId, address_id: direccionActiva.id },
+        })
+        if (error) throw new Error(error.message)
+        if (!data?.ok) throw new Error(data?.error || 'No fue posible cotizar el envío')
+        if (!active) return
+        setCostoEnvio(Number(data.delivery_fee))
+        setDistanciaKm(Number(data.distance_km))
+        setDetalleCotizacion(String(data.message || 'Estimación geográfica'))
+      } catch (err) {
+        if (active) setDetalleCotizacion(err instanceof Error ? err.message : 'Error de cotización')
+      } finally {
+        if (active) setCotizando(false)
+      }
+    }
+    void cotizar()
+    return () => { active = false }
+  }, [carrito?.sucursalId, carrito?.modalidad, direccionActiva])
 
   const esDelivery = carrito?.modalidad === 'domicilio'
   /* eslint-disable react-hooks/set-state-in-effect -- La modalidad de pago debe sincronizarse al cambiar entrega. */
@@ -227,6 +273,46 @@ export default function CarritoPage() {
     }
   }, [subtotal, esDelivery, costoEnvio, propina, metodoPago])
   const pendienteEnvio = esDelivery && costoEnvio === null
+
+  async function confirmarPedido() {
+    if (!carrito?.items.length || creandoPedido) return
+    if (metodoPago==='tarjeta'&&!payphoneHabilitado){setMensaje('PayPhone todavía no está habilitado para cobros. Selecciona otro método de pago.');return}
+    if (esDelivery && (!direccionActiva || pendienteEnvio || !deliveryDisponible)) {
+      setMensaje('Selecciona una dirección con GPS, verifica el precio del envío y la disponibilidad del repartidor.')
+      return
+    }
+    setCreandoPedido(true)
+    setMensaje('')
+    try {
+      const signature = JSON.stringify({ branch:carrito.sucursalId, modality:carrito.modalidad, items:carrito.items, method:metodoPago, address:direccionActiva?.id, tip:propina, billing:facturacion })
+      const previous = sessionStorage.getItem('ff:pending-order-idempotency')
+      const saved = previous ? JSON.parse(previous) as {signature:string;key:string} : null
+      const key = saved?.signature===signature ? saved.key : crypto.randomUUID()
+      sessionStorage.setItem('ff:pending-order-idempotency', JSON.stringify({signature,key}))
+      const { data, error } = await supabase.functions.invoke('flashfood-mobile-orders', {
+        body: { action:'create', idempotency_key:key, branch_id:carrito.sucursalId, modalidad:carrito.modalidad,
+          payment_method:metodoPago, address_id:esDelivery?direccionActiva?.id:null, items:carrito.items,
+          tip:esDelivery?propina:0, note:nota, expected_total:desglose.total,
+          billing:facturacion },
+      })
+      if (error) throw new Error(error.message)
+      if (!data?.ok) throw new Error(data?.error || 'No fue posible crear el pedido')
+      if (metodoPago === 'tarjeta') {
+        const pay = await supabase.functions.invoke('flashfood-mobile-orders', { body:{action:'payment_link',order_id:data.order.id} })
+        if (pay.error) throw new Error(pay.error.message)
+        if (!pay.data?.ok || !pay.data?.link) throw new Error(pay.data?.error || 'No se pudo generar el enlace de pago')
+        window.open(String(pay.data.link), '_blank', 'noopener,noreferrer')
+        setMensaje('Pedido pendiente de confirmación del pago PayPhone. Abrimos un enlace seguro fuera de la aplicación.')
+      } else {
+        vaciarCarrito()
+        setCarrito(null)
+        sessionStorage.removeItem('ff:pending-order-idempotency')
+        navigate('/pedidos')
+      }
+    } catch (e) {
+      setMensaje(e instanceof Error?e.message:'No se pudo crear el pedido')
+    } finally { setCreandoPedido(false) }
+  }
   const datosFacturacionCompletos = !!(
     facturacion.nombre.trim() && facturacion.identificacion.trim() && facturacion.correo.trim()
   )
@@ -420,16 +506,16 @@ export default function CarritoPage() {
                   <span>Total</span><span>{pendienteEnvio ? 'Por calcular' : dinero(desglose.total)}</span>
                 </div>
               </div>
-              {pendienteEnvio && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-800">Falta obtener la tarifa real de entrega antes de confirmar el total.</p>}
+              {esDelivery && <p role="status" className="mt-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-800">{cotizando ? 'Calculando envío...' : detalleCotizacion || 'Selecciona tu dirección con GPS para estimar el costo.'}{distanciaKm !== null ? ` Distancia geográfica: ${distanciaKm.toFixed(2)} km.` : ''}</p>}
             </section>
             {mensaje && <div className="mx-4 mt-4 flex items-center gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-700"><AlertCircle size={17} />{mensaje}</div>}
             <div className="bg-white px-4 pb-6 pt-4">
-              <button type="button" disabled
-                className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-2xl bg-orange-500 px-4 py-4 text-base font-bold text-white opacity-70">
-                {esDelivery && metodoPago === 'tarjeta' ? 'Continuar con PayPhone' : 'Confirmar pedido'}
+              <button type="button" disabled={creandoPedido || cotizando || (esDelivery && (pendienteEnvio || !deliveryDisponible))} onClick={() => void confirmarPedido()}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 px-4 py-4 text-base font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
+                {creandoPedido ? 'Creando pedido...' : esDelivery && metodoPago === 'tarjeta' ? 'Continuar con PayPhone' : 'Confirmar pedido'}
                 <ChevronRight size={20} />
               </button>
-              <p className="mt-2 text-center text-xs text-gray-400">Pendiente de conectar la creación real del pedido y el pago.</p>
+              <p className="mt-2 text-center text-xs text-gray-400">El servidor verifica precios y distancia vial. Transferencias requieren aprobación; tarjeta requiere confirmación del proveedor.</p>
             </div>
           </>
         )}
@@ -459,7 +545,7 @@ export default function CarritoPage() {
               const Icono = opcion.icono
               return (
                 <button key={opcion.id} type="button" onClick={() => void cambiarModalidad(opcion.id)} disabled={opcion.id === 'domicilio' && (consultandoDelivery || !deliveryDisponible)}
-                  className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left ${carrito.modalidad === opcion.id ? 'border-orange-500 bg-orange-50' : 'border-gray-200'} ${opcion.id === 'domicilio' && (consultandoDelivery || !deliveryDisponible) ? 'cursor-not-allowed opacity-40' : ''}`}>
+                  className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left disabled:cursor-not-allowed disabled:opacity-40 ${carrito.modalidad === opcion.id ? 'border-orange-500 bg-orange-50' : 'border-gray-200'} ${opcion.id === 'domicilio' && (consultandoDelivery || !deliveryDisponible) ? 'cursor-not-allowed opacity-40' : ''}`}>
                   <Icono size={23} className="shrink-0 text-orange-600" />
                   <span className="min-w-0 flex-1"><span className="block text-sm font-bold">{opcion.titulo}</span>
                     <span className="mt-1 block text-xs text-gray-500">{opcion.descripcion}</span></span>
@@ -526,14 +612,14 @@ export default function CarritoPage() {
                   id: 'tarjeta',
                   nombre: 'Tarjeta de crédito o débito',
                   descripcion:
-                    'PayPhone · Tarifa de servicio del 15 %',
+                    payphoneHabilitado ? 'PayPhone · Tarifa de servicio del 15 %' : 'PayPhone pendiente de configurar',
                   icono: <CreditCard size={23} />,
                 },
                 {
                   id: 'transferencia',
                   nombre: 'Transferencia bancaria',
                   descripcion:
-                    'A las cuentas del delivery asignado',
+                    'Transferencia pendiente de verificación bancaria',
                   icono: <Landmark size={23} />,
                 },
                 {
@@ -548,6 +634,7 @@ export default function CarritoPage() {
               <button
                 key={opcion.id}
                 type="button"
+                disabled={opcion.id === 'tarjeta' && !payphoneHabilitado}
                 onClick={() => {
                   setMetodoPago(opcion.id)
                   setModal(null)

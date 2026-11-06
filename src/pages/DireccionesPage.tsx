@@ -28,7 +28,7 @@ export default function DireccionesPage() {
     setSeleccionada(selected?.id || null)
   }
   useEffect(() => {
-    void reload().catch(e=>setError(e instanceof Error?e.message:'No se pudieron consultar las direcciones.'))
+    queueMicrotask(()=>{void reload().catch(e=>setError(e instanceof Error?e.message:'No se pudieron consultar las direcciones.'))})
   }, [])
   const setField = <K extends keyof Formulario>(key: K, value: Formulario[K]) => setForm(old=> old?{...old,[key]:value}:old)
   const save = async () => {

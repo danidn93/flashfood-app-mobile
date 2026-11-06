@@ -122,7 +122,7 @@ export default function RestaurantPage() {
   }, [])
 
   useEffect(() => {
-    void verificarDelivery()
+    queueMicrotask(()=>{void verificarDelivery()})
     const alVolver = () => { if (document.visibilityState === 'visible') void verificarDelivery() }
     document.addEventListener('visibilitychange', alVolver)
     return () => document.removeEventListener('visibilitychange', alVolver)
