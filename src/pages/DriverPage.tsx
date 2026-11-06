@@ -3,14 +3,17 @@ import { Link } from 'react-router-dom'
 import { Bike, CheckCircle2, CircleOff, LocateFixed, MapPin, RefreshCw, ShieldAlert } from 'lucide-react'
 import { roleRequest } from '../services/roles'
 import { supabase } from '../lib/supabase'
+import FlashFoodOrderChat from '../components/marketplace/FlashFoodOrderChat'
 
 type Driver={id:string;full_name:string;phone:string|null;vehicle_type:string|null;vehicle_plate:string|null;photo_storage_path:string|null;availability:'offline'|'available'|'busy';active:boolean;verified:boolean}
 type Order={id:string;payment_method:string;status:'assigned'|'accepted'|'picked_up';address_snapshot:Record<string,unknown>|null;route_km:number|null;total:number;created_at:string}
 const statusText={offline:'Desconectado',available:'Disponible',busy:'Ocupado'}
-const next:Record<string,{status:'accepted'|'picked_up'|'delivered';label:string}>={assigned:{status:'accepted',label:'Aceptar entrega'},accepted:{status:'picked_up',label:'Marcar como recogido'},picked_up:{status:'delivered',label:'Marcar como entregado'}}
+const next:Record<string,{status:'picked_up'|'delivered';label:string}>={assigned:{status:'picked_up',label:'Pedido retirado · En reparto'},accepted:{status:'picked_up',label:'Pedido retirado · En reparto'},picked_up:{status:'delivered',label:'Marcar como entregado'}}
 export default function DriverPage(){
  const [driver,setDriver]=useState<Driver|null>(null)
  const [orders,setOrders]=useState<Order[]>([])
+ const [offers,setOffers]=useState<Array<{id:string;order_id:string;expires_at:string}>>([])
+ const [chatOrder,setChatOrder]=useState('')
  const [loading,setLoading]=useState(true)
  const [saving,setSaving]=useState(false)
  const [error,setError]=useState('')
@@ -22,9 +25,10 @@ export default function DriverPage(){
  const reload=useCallback(async()=>{
   setLoading(true)
   try{
-   const [profile,assignments]=await Promise.all([
+   const [profile,assignments,requests]=await Promise.all([
     roleRequest<{driver:Driver|null}>('driver_profile'),
     supabase.functions.invoke('flashfood-mobile-orders',{body:{action:'driver_orders'}}),
+    supabase.functions.invoke('flashfood-mobile-orders',{body:{action:'offer_list'}}),
    ])
    if(assignments.error)throw new Error(assignments.error.message)
    if(!assignments.data?.ok)throw new Error(assignments.data?.error||'No fue posible consultar entregas')
@@ -32,6 +36,7 @@ export default function DriverPage(){
    setVehicleType(profile.driver?.vehicle_type||'')
    setVehiclePlate(profile.driver?.vehicle_plate||'')
    setOrders(assignments.data.orders as Order[])
+   if(!requests.error&&requests.data?.ok)setOffers(requests.data.offers||[])
    setError('')
   }catch(e){setError(e instanceof Error?e.message:'No se pudo cargar el panel')}
   finally{setLoading(false)}
@@ -78,6 +83,33 @@ export default function DriverPage(){
   }catch(e){setError(e instanceof Error?e.message:'No se pudo actualizar tu perfil')}
   finally{setSaving(false)}
  }
+ const replyOffer=async(id:string,accept:boolean)=>{
+  setSaving(true);setError('');setNotice('')
+  try{
+   const result=await call('offer_reply',{offer_id:id,accept})
+   setNotice(result.result==='accepted'?'Pedido asignado. Dirígete al restaurante.':
+      result.result==='rejected'?'Solicitud rechazada.':'Solicitud vencida.')
+   await reload()
+  }catch(e){setError(e instanceof Error?e.message:'No se pudo responder')}
+  finally{setSaving(false)}
+ }
+ // La proximidad se mide desde una ubicación reciente; nunca se mantiene
+ // la geolocalización funcionando cuando el repartidor está desconectado.
+ useEffect(()=>{
+  if(driver?.availability!=='available'||!navigator.geolocation)return
+  let alive=true
+  const report=()=>{
+   navigator.geolocation.getCurrentPosition(p=>{
+    if(!alive)return
+    void supabase.functions.invoke('flashfood-mobile-orders',{body:{
+      action:'driver_presence',latitude:p.coords.latitude,longitude:p.coords.longitude,
+    }})
+   },()=>{}, {enableHighAccuracy:true,maximumAge:15000,timeout:12000})
+  }
+  report()
+  const timer=window.setInterval(()=>{if(document.visibilityState==='visible')report()},30000)
+  return ()=>{alive=false;window.clearInterval(timer)}
+ },[driver?.availability])
  const transition=async(o:Order)=>{
   setSaving(true);setError('');setNotice('')
   try{
@@ -87,7 +119,7 @@ export default function DriverPage(){
   }catch(e){setError(e instanceof Error?e.message:'No se pudo actualizar el pedido')}
   finally{setSaving(false)}
  }
- const active=orders.find(o=>o.status==='accepted'||o.status==='picked_up')
+ const active=orders.find(o=>o.status==='assigned'||o.status==='accepted'||o.status==='picked_up')
  const activeId=active?.id
  // Foreground-only tracking. Stop immediately when hidden, unmounted or no accepted delivery.
  useEffect(()=>{
@@ -155,6 +187,16 @@ export default function DriverPage(){
      <button type="button" disabled={saving} onClick={()=>void saveProfile()} className="rounded-xl bg-orange-500 px-4 py-3 font-semibold text-white disabled:opacity-40">Guardar perfil</button>
    </section>
    <section className="space-y-3">
+    <h2 className="text-lg font-extrabold">Solicitudes de entrega</h2>
+    {!offers.length&&<p className="rounded-xl bg-white p-4 text-sm text-gray-500">Sin solicitudes nuevas.</p>}
+    {offers.map(o=><article key={o.id} className="rounded-xl border border-orange-300 bg-orange-50 p-4">
+      <p className="font-bold">Pedido #{o.order_id.slice(0,8)}</p>
+      <p className="text-xs text-slate-600">Acepta antes de {new Date(o.expires_at).toLocaleTimeString('es-EC')}. La solicitud caduca a los 60 segundos.</p>
+      <div className="mt-3 flex gap-2"><button disabled={saving} onClick={()=>void replyOffer(o.id,true)} className="rounded-lg bg-green-600 px-4 py-2 font-bold text-white">Aceptar</button>
+      <button disabled={saving} onClick={()=>void replyOffer(o.id,false)} className="rounded-lg border px-4 py-2 font-bold">Rechazar</button></div>
+    </article>)}
+   </section>
+   <section className="space-y-3">
     <h2 className="text-lg font-extrabold">Mis entregas activas</h2>
     {!orders.length&&<p className="rounded-xl bg-white p-5 text-sm text-gray-500">Todavía no tienes entregas asignadas.</p>}
     {orders.map(o=>{
@@ -169,7 +211,9 @@ export default function DriverPage(){
       <div className="mt-4 flex flex-wrap gap-2">
        {maps&&<a href={maps} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border px-4 py-3 font-bold text-orange-600"><MapPin size={17}/>Navegar</a>}
        <button disabled={saving} onClick={()=>void transition(o)} className="rounded-xl bg-orange-500 px-4 py-3 font-bold text-white disabled:opacity-40">{step.status==='delivered'&&o.payment_method==='efectivo'?'Entregado y efectivo recibido':step.label}</button>
+       <button type="button" onClick={()=>setChatOrder(v=>v===o.id?'':o.id)} className="rounded-xl border px-4 py-3 font-bold text-orange-600">{chatOrder===o.id?'Cerrar chat':'Chat del pedido'}</button>
       </div>
+      {chatOrder===o.id&&<div className="mt-4"><FlashFoodOrderChat orderId={o.id}/></div>}
      </article>
     })}
    </section>
