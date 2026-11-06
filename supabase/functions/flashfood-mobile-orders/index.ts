@@ -57,6 +57,12 @@ Deno.serve(async req => {
     const {data:driver,error:driverError}=await db.from('flashfood_drivers').select('id,active,verified,availability').eq('auth_user_id',userId).maybeSingle()
     if(driverError)throw driverError
 
+    if(action==='capabilities'){
+      const cards=Boolean(Deno.env.get('PAYPHONE_TOKEN')&&Deno.env.get('PAYPHONE_STORE_ID')&&
+        Deno.env.get('PAYPHONE_RESPONSE_URL')&&Deno.env.get('PAYPHONE_ENABLE_LIVE_CHARGES')==='true')
+      return send({ok:true,payphone_enabled:cards})
+    }
+
     if(action==='list'){
       const q=admin&&body.scope==='all'
         ? db.from('flashfood_mobile_orders').select('*').order('created_at',{ascending:false}).limit(100)
