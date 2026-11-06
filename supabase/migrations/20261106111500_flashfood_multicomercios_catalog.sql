@@ -84,6 +84,10 @@ begin
  end if;
  insert into public.local_funcionalidades(local_id,flashfood_activo,flashfood_acepta_pedidos)
  values(v_local_id,true,true) on conflict(local_id) do nothing;
+ -- Conexión fiscal opcional; la activación final sigue bajo control del Superadmin.
+ insert into public.flashfood_merchant_fiscal_settings(local_id,origen,negocio_origen_id,facturacion_flashfood_habilitada)
+ values(v_local_id,'multicomercios',v_business_id,false)
+ on conflict(local_id) do nothing;
 
  -- Las sucursales ERP eliminadas/inactivas dejan de publicarse.
  update public.flashfood_erp_catalog_branches
@@ -112,6 +116,12 @@ begin
      update public.flashfood_erp_catalog_branches set last_synced_at=now()
      where erp_branch_id=v_branch_id;
    end if;
+   insert into public.flashfood_erp_branch_links(
+      flashfood_branch_id,flashfood_local_id,erp_business_id,erp_branch_id)
+   values(v_local_branch,v_local_id,v_business_id,v_branch_id)
+   on conflict(flashfood_branch_id) do update set
+    erp_business_id=excluded.erp_business_id,erp_branch_id=excluded.erp_branch_id,
+    flashfood_local_id=excluded.flashfood_local_id,updated_at=now();
    insert into public.configuracion(sucursal_id,logo_url,hero_bg_url)
    values(v_local_branch,v_logo,v_logo)
    on conflict(sucursal_id) do update set
