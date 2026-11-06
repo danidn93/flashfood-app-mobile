@@ -41,7 +41,7 @@ npx cap sync ios
 npx cap open ios
 ```
 
-Se añadió `@capacitor-community/background-geolocation@1.3.1` y los permisos iOS de ubicación siempre y en segundo plano. En Xcode verificar **Signing & Capabilities → Background Modes → Location updates**, permiso de ubicación del repartidor y funcionamiento con pantalla bloqueada en iPhone real. El watcher nativo se activa solo en entrega asignada y se detiene al salir de esa entrega. El navegador usa GPS solo en primer plano.
+Se añadió `@capacitor-community/background-geolocation@1.3.1` y los permisos iOS de ubicación siempre y en segundo plano. En Xcode verificar **Signing & Capabilities → Background Modes → Location updates**, permiso de ubicación del repartidor y funcionamiento con pantalla bloqueada en iPhone real. El watcher nativo se activa al ponerse **Disponible** para mantener la ubicación de búsqueda y continúa durante una entrega asignada; se detiene al **Desconectarse** o al terminar el pedido, según el estado operativo. Verificar cambios de permisos y consumo de batería en dispositivos reales. El navegador usa GPS solo en primer plano.
 
 **Pendiente:** una Live Activity real requiere crear la extensión de WidgetKit/ActivityKit, registrar el token push-to-update y enviar los eventos APNs correspondientes. La clave `NSSupportsLiveActivities` existente NO equivale a esa integración.
 
