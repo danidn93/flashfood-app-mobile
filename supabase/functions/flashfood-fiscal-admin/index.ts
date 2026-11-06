@@ -115,6 +115,42 @@ Deno.serve(async req=>{
       if(error)throw error
       return json({ok:true,rows:data||[]})
     }
+    if(action==='branch_list'){
+      const {data:catalog,error:catalogError}=await db.rpc('flashfood_catalogo_restaurantes',{p_app_codigo:'flashfood_mobile'})
+      if(catalogError)throw catalogError
+      const {data:links,error:linksError}=await db.from('flashfood_erp_branch_links').select('*')
+      if(linksError)throw linksError
+      const mapped=new Map((links||[]).map(x=>[x.flashfood_branch_id,x]))
+      return json({ok:true,rows:(Array.isArray(catalog)?catalog:[]).map(item=>({
+        flashfood_branch_id:item.sucursal_id,
+        flashfood_local_id:item.local_id,
+        name:item.sucursal||item.nombre||item.restaurante||String(item.sucursal_id).slice(0,8),
+        erp_business_id:mapped.get(item.sucursal_id)?.erp_business_id||'',
+        erp_branch_id:mapped.get(item.sucursal_id)?.erp_branch_id||'',
+      }))})
+    }
+    if(action==='branch_save'){
+      if(!uuid(payload.branch_id)||!uuid(payload.local_id)||!uuid(payload.erp_business_id)||!uuid(payload.erp_branch_id))
+        return fail('Todos los identificadores de negocio y sucursal deben ser UUID válidos')
+      const {data:catalog,error:catalogError}=await db.rpc('flashfood_catalogo_restaurantes',{p_app_codigo:'flashfood_mobile'})
+      if(catalogError)throw catalogError
+      const valid=(Array.isArray(catalog)?catalog:[]).some(x=>x.sucursal_id===payload.branch_id&&x.local_id===payload.local_id)
+      if(!valid)return fail('La sucursal no corresponde a ese local en FlashFood')
+      const {data:merchant,error:merchantError}=await db.from('flashfood_merchant_fiscal_settings')
+        .select('negocio_origen_id,origen,facturacion_flashfood_habilitada')
+        .eq('local_id',payload.local_id).maybeSingle()
+      if(merchantError)throw merchantError
+      if(!merchant?.facturacion_flashfood_habilitada||merchant.origen!=='multicomercios'
+        ||merchant.negocio_origen_id!==payload.erp_business_id)
+        return fail('Primero habilita el negocio con el UUID correcto de Multicomercios')
+      const {error}=await db.from('flashfood_erp_branch_links').upsert({
+        flashfood_branch_id:payload.branch_id,flashfood_local_id:payload.local_id,
+        erp_business_id:payload.erp_business_id,erp_branch_id:payload.erp_branch_id,
+        updated_at:new Date().toISOString(),updated_by:auth.user.id,
+      },{onConflict:'flashfood_branch_id'})
+      if(error)throw error
+      return json({ok:true})
+    }
     if(action==='merchant_list'){
       const {data:locals,error:localsError}=await db.from('locales').select('id,nombre').order('nombre').limit(1000)
       if(localsError)throw localsError
