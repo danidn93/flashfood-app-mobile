@@ -37,6 +37,8 @@ type RestauranteGlobalDB = {
   lng: number | null
   abierto: boolean
   acepta_pedidos: boolean
+  logo_url?: string | null
+  hero_bg_url?: string | null
 }
 
 type ImagenRestaurante = {
@@ -68,7 +70,13 @@ export async function obtenerRestaurantes(): Promise<Restaurante[]> {
     )
   }
 
-  const catalogo = (data ?? []) as RestauranteGlobalDB[]
+  // Agregar el espejo del ERP sin exponer IDs del ERP ni usar una segunda sesión Supabase.
+  const {data:erpRows,error:erpError}=await supabase.rpc('flashfood_erp_public_restaurants')
+  if(erpError)throw new Error('No se pudo leer catálogo de Multicomercios: '+erpError.message)
+  const legacy=(data ?? []) as RestauranteGlobalDB[]
+  const erp=(Array.isArray(erpRows)?erpRows:[]) as RestauranteGlobalDB[]
+  const existing=new Set(legacy.map(x=>x.sucursal_id))
+  const catalogo=[...legacy,...erp.filter(x=>!existing.has(x.sucursal_id))]
 
   if (catalogo.length === 0) {
     return []
@@ -207,8 +215,8 @@ export async function obtenerRestaurantes(): Promise<Restaurante[]> {
       // Logotipo y portada del restaurante.
       configuracion: [
         {
-          logo_url: configuracion?.logo_url ?? null,
-          hero_bg_url: configuracion?.hero_bg_url ?? null,
+          logo_url: configuracion?.logo_url ?? item.logo_url ?? null,
+          hero_bg_url: configuracion?.hero_bg_url ?? item.hero_bg_url ?? null,
         },
       ],
 
