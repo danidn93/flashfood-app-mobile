@@ -6,6 +6,12 @@
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>FlashFood utiliza tu ubicación únicamente cuando decides obtener coordenadas para una dirección o consultar tu posición como repartidor.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>FlashFood usa tu ubicación mientras realizas una entrega asignada, incluso si bloqueas el iPhone. El seguimiento termina cuando se entrega o cancela el pedido.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
