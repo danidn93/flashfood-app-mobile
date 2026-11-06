@@ -214,9 +214,11 @@ export default function CarritoPage() {
     let active = true
     if (carrito?.modalidad !== 'domicilio' || !carrito.sucursalId) return
     if (!direccionActiva) {
-      setCostoEnvio(null)
-      setDistanciaKm(null)
-      setDetalleCotizacion('Selecciona una dirección guardada para cotizar el envío.')
+      queueMicrotask(() => {
+        setCostoEnvio(null)
+        setDistanciaKm(null)
+        setDetalleCotizacion('Selecciona una dirección guardada para cotizar el envío.')
+      })
       return
     }
     const cotizar = async () => {
@@ -242,7 +244,7 @@ export default function CarritoPage() {
     }
     void cotizar()
     return () => { active = false }
-  }, [carrito?.sucursalId, carrito?.modalidad, direccionActiva?.id])
+  }, [carrito?.sucursalId, carrito?.modalidad, direccionActiva])
 
   const esDelivery = carrito?.modalidad === 'domicilio'
   /* eslint-disable react-hooks/set-state-in-effect -- La modalidad de pago debe sincronizarse al cambiar entrega. */
