@@ -9,6 +9,7 @@ create table if not exists public.flashfood_settlement_obligations (
   driver_id uuid references public.flashfood_drivers(id),
   erp_business_id uuid,
   erp_branch_id uuid,
+  erp_synced_at timestamptz,
   amount_due numeric(12,2) not null check (amount_due>0),
   amount_paid numeric(12,2) not null default 0 check(amount_paid>=0),
   status text not null default 'pending' check(status in ('pending','partial','paid')),
