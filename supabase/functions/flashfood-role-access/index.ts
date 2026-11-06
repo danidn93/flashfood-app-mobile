@@ -75,6 +75,38 @@ Deno.serve(async req=>{
    if(sErr)throw sErr
    return respond({ok:true,businesses:(data||[]).filter(b=>superadmin||allowedRead(b.id)).map(b=>({...b,free_delivery:Boolean(settings?.find(s=>s.business_id===b.id)?.free_delivery),can_manage:allowedAdmin(b.id)}))})
   }
+  if(action==='merchant_orders'){
+   const businessId=body.business_id
+   if(!validId(businessId)||!allowedRead(businessId))return bad('Sin permiso sobre este negocio',403)
+   const assignedBranches=grants.filter(g=>g.business_id===businessId&&g.active&&g.branch_id).map(g=>g.branch_id)
+   const unrestricted=superadmin||grants.some(g=>g.business_id===businessId&&g.active&&g.role==='admin'&&!g.branch_id)
+    ||grants.some(g=>g.business_id===businessId&&g.active&&g.role==='empleado'&&!g.branch_id)
+   let query=db.from('flashfood_orders').select('id,order_number,mobile_branch_id,fulfillment,status,payment_method,payment_status,products_total,created_at,customer_note')
+    .eq('mobile_local_id',businessId).order('created_at',{ascending:false}).limit(100)
+   if(!unrestricted){
+    if(!assignedBranches.length)return respond({ok:true,orders:[]})
+    query=query.in('mobile_branch_id',assignedBranches)
+   }
+   const {data,error}=await query
+   if(error)throw error
+   return respond({ok:true,orders:data||[]})
+  }
+  if(action==='merchant_alerts'){
+   const businessId=body.business_id
+   if(!validId(businessId)||!allowedRead(businessId))return bad('Sin permiso sobre este negocio',403)
+   const {data,error}=await db.from('flashfood_mobile_merchant_alerts')
+    .select('id,order_id,title,message,read_at,created_at').eq('business_id',businessId)
+    .eq('user_id',caller).order('created_at',{ascending:false}).limit(30)
+   if(error)throw error
+   return respond({ok:true,alerts:data||[]})
+  }
+  if(action==='merchant_alert_read'){
+   if(!validId(body.alert_id))return bad('Alerta inválida')
+   const {error}=await db.from('flashfood_mobile_merchant_alerts').update({read_at:new Date().toISOString()})
+    .eq('id',body.alert_id).eq('user_id',caller)
+   if(error)throw error
+   return respond({ok:true})
+  }
   if(action==='employees'){
    const businessId=body.business_id
    if(!validId(businessId)||!allowedAdmin(businessId))return bad('Sin permiso sobre este negocio',403)
