@@ -221,4 +221,14 @@ as $
 $;
 revoke all on function public.flashfood_erp_public_restaurants() from public;
 grant execute on function public.flashfood_erp_public_restaurants() to anon,authenticated,service_role;
+
+-- Excluir todos los espejos ERP del catálogo legado para respetar publicación/despublicación.
+create or replace function public.flashfood_erp_mirror_branch_ids()
+returns jsonb language sql stable security definer set search_path=''
+as $
+ select coalesce(jsonb_agg(sucursal_id),'[]'::jsonb)
+ from public.flashfood_erp_catalog_branches
+$;
+revoke all on function public.flashfood_erp_mirror_branch_ids() from public;
+grant execute on function public.flashfood_erp_mirror_branch_ids() to anon,authenticated,service_role;
 commit;
