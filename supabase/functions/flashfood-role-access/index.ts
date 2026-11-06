@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
+import {pushToDevices} from '../_shared/flashfoodMerchantNotify.ts'
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
 const respond = (obj: Record<string,unknown>,status=200) => new Response(JSON.stringify(obj),{status,headers:{...headers,'Content-Type':'application/json'}})
 const bad = (error:string,status=400) => respond({ok:false,error},status)
@@ -94,7 +95,7 @@ Deno.serve(async req=>{
   if(action==='merchant_stage'||action==='merchant_chat_list'||action==='merchant_chat_send'){
    if(!validId(body.order_id))return bad('Pedido inválido',400)
    const {data:order,error:orderError}=await db.from('flashfood_orders')
-     .select('id,mobile_local_id,mobile_branch_id,fulfillment,payment_method,payment_status,status')
+     .select('id,customer_id,mobile_local_id,mobile_branch_id,fulfillment,payment_method,payment_status,status')
      .eq('id',body.order_id).maybeSingle()
    if(orderError)throw orderError
    if(!order||!order.mobile_local_id||!allowedRead(order.mobile_local_id))
@@ -124,6 +125,9 @@ Deno.serve(async req=>{
        sender_name:'Restaurante',message,
      }).select('id,sender_role,sender_name,message,created_at').single()
      if(error)throw error
+     try{await pushToDevices(db,[order.customer_id],order.id,
+       'Nuevo mensaje en FlashFood','El restaurante te envió un mensaje sobre tu pedido.','order_chat')}
+     catch(e){console.error('Chat guardado; push pendiente:',e instanceof Error?e.message:'Error')}
      return respond({ok:true,message:data})
    }
    const next=String(body.stage||'')
