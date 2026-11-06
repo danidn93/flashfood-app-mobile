@@ -5,7 +5,7 @@ import { roleRequest } from '../services/roles'
 import { supabase } from '../lib/supabase'
 
 type Driver={id:string;full_name:string;phone:string|null;vehicle_type:string|null;availability:'offline'|'available'|'busy';active:boolean;verified:boolean}
-type Order={id:string;status:'assigned'|'accepted'|'picked_up';address_snapshot:Record<string,unknown>|null;route_km:number|null;total:number;created_at:string}
+type Order={id:string;payment_method:string;status:'assigned'|'accepted'|'picked_up';address_snapshot:Record<string,unknown>|null;route_km:number|null;total:number;created_at:string}
 const statusText={offline:'Desconectado',available:'Disponible',busy:'Ocupado'}
 const next:Record<string,{status:'accepted'|'picked_up'|'delivered';label:string}>={assigned:{status:'accepted',label:'Aceptar entrega'},accepted:{status:'picked_up',label:'Marcar como recogido'},picked_up:{status:'delivered',label:'Marcar como entregado'}}
 export default function DriverPage(){
@@ -53,7 +53,7 @@ export default function DriverPage(){
  const transition=async(o:Order)=>{
   setSaving(true);setError('');setNotice('')
   try{
-   await call('driver_transition',{order_id:o.id,status:next[o.status].status})
+   await call('driver_transition',{order_id:o.id,status:next[o.status].status, cash_collected:next[o.status].status==='delivered' && o.payment_method==='efectivo'})
    setNotice('Estado de la entrega actualizado.')
    await reload()
   }catch(e){setError(e instanceof Error?e.message:'No se pudo actualizar el pedido')}
@@ -118,7 +118,7 @@ export default function DriverPage(){
       <p className="mt-1 text-sm text-gray-500">{String(dest?.city||'')} · {String(dest?.reference||'')}</p>
       <div className="mt-4 flex flex-wrap gap-2">
        {maps&&<a href={maps} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border px-4 py-3 font-bold text-orange-600"><MapPin size={17}/>Navegar</a>}
-       <button disabled={saving} onClick={()=>void transition(o)} className="rounded-xl bg-orange-500 px-4 py-3 font-bold text-white disabled:opacity-40">{step.label}</button>
+       <button disabled={saving} onClick={()=>void transition(o)} className="rounded-xl bg-orange-500 px-4 py-3 font-bold text-white disabled:opacity-40">{step.status==='delivered'&&o.payment_method==='efectivo'?'Entregado y efectivo recibido':step.label}</button>
       </div>
      </article>
     })}
