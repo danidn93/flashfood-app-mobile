@@ -99,12 +99,16 @@ end;
 $$;
 create or replace function public.flashfood_reply_delivery_offer(p_offer_id uuid,p_driver_id uuid,p_accept boolean)
 returns jsonb language plpgsql security definer set search_path='' as $$
-declare offer_row record; order_row record; v_now timestamptz:=now();
+declare offer_row record; offer_ref record; order_row record; v_now timestamptz:=now();
 begin
+ select order_id,driver_id into offer_ref from public.flashfood_delivery_offers where id=p_offer_id;
+ if not found or offer_ref.driver_id<>p_driver_id then return jsonb_build_object('result','not_found');end if;
+ -- Same lock order as flashfood_offer_nearest: order first, then offer.
+ select id,driver_id,status into order_row from public.flashfood_orders where id=offer_ref.order_id for update;
+ if not found then return jsonb_build_object('result','not_found');end if;
  select * into offer_row from public.flashfood_delivery_offers where id=p_offer_id for update;
- if not found or offer_row.driver_id<>p_driver_id then return jsonb_build_object('result','not_found');end if;
- select id,driver_id,status into order_row from public.flashfood_orders where id=offer_row.order_id for update;
- if offer_row.status<>'pending' or offer_row.expires_at<=v_now or order_row.driver_id is not null then
+ if not found then return jsonb_build_object('result','not_found');end if;
+ if offer_row.status<>'pending' or offer_row.expires_at<=v_now or order_row.driver_id is not null or order_row.status='cancelled' then
    update public.flashfood_delivery_offers set status='expired',responded_at=v_now where id=p_offer_id and status='pending';
    return jsonb_build_object('result','expired');
  end if;
