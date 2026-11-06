@@ -16,8 +16,8 @@ Deno.serve(async req=>{
     const token=Deno.env.get('PAYPHONE_TOKEN')
     if(!supabaseUrl||!secret||!token)return page('Servicio no disponible','La conciliación de PayPhone todavía no está configurada.',503)
     const db=createClient(supabaseUrl,secret,{auth:{persistSession:false,autoRefreshToken:false}})
-    const {data:order,error:readError}=await db.from('flashfood_mobile_orders').select('*')
-      .eq('payphone_client_tx_id',clientTxId).eq('payment_method','tarjeta').maybeSingle()
+    const {data:order,error:readError}=await db.from('flashfood_orders').select('*')
+      .eq('payphone_client_tx_id',clientTxId).eq('payment_method','payphone').maybeSingle()
     if(readError)throw readError
     if(!order||!uuid(order.id))return page('Pedido no encontrado','La transacción no coincide con un pedido creado en FlashFood.',404)
     if(order.payment_status==='paid')return page('Pago confirmado','Tu pedido ya figura como pagado.')
@@ -27,24 +27,24 @@ Deno.serve(async req=>{
     })
     if(!response.ok)return page('Pago sin confirmar','PayPhone todavía no pudo confirmar el resultado. Revisa el pedido más tarde.',502)
     const result=await response.json()
-    const amount=Math.round(Number(order.total)*100)
+    const amount=Math.round(Number(order.grand_total)*100)
     if(result.clientTransactionId!==clientTxId||Number(result.amount)!==amount||
       result.transactionStatus!=='Approved'||Number(result.statusCode)!==3||
       String(result.currency||'USD')!=='USD'||String(result.transactionId)!==String(id)){
       return page('Pago no aprobado','La confirmación de PayPhone no coincide con el pedido o aún no está aprobada.',409)
     }
     const {data:updated,error:updateError}=await db.from('flashfood_mobile_orders').update({
-      payment_status:'paid',status:'placed',payphone_transaction_id:String(result.transactionId),
+      payment_status:'paid',status:'pending',payphone_transaction_id:String(result.transactionId),
       updated_at:new Date().toISOString(),
-    }).eq('id',order.id).eq('payment_status','pending').eq('status','pending_payment').select('id,modality').maybeSingle()
+    }).eq('id',order.id).eq('payment_status','pending').eq('status','pending').select('id,fulfillment').maybeSingle()
     if(updateError)throw updateError
     if(updated){
-      if(updated.modality==='domicilio'){
-        const {error:dispatchError}=await db.rpc('flashfood_mobile_assign_driver',{p_order_id:updated.id})
+      if(updated.fulfillment==='delivery'){
+        const {error:dispatchError}=await db.rpc('flashfood_assign_driver',{p_order_id:updated.id})
         if(dispatchError)console.error('Pago aprobado; despacho pendiente',dispatchError.message)
       }
       try{
-        const {error:ledgerError}=await db.rpc('flashfood_stage_card_settlements',{p_order_id:updated.id})
+        const {error:ledgerError}=await db.rpc('flashfood_stage_card_obligations',{p_order_id:updated.id})
         if(ledgerError)throw ledgerError
         const sync=await syncFlashFoodOrderToErp(db,updated.id,true)
         if(!sync.synced)console.warn('Pendiente sincronizar pedido al ERP:',sync.reason)
