@@ -45,6 +45,7 @@ const isNight = (start: unknown, end: unknown) => {
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: cors })
   if (req.method !== 'POST') return reply({ ok: false, error: 'Método no permitido' }, 405)
+  let stage = 'initialization'
   try {
     const url = Deno.env.get('SUPABASE_URL')
     const anon = Deno.env.get('SUPABASE_ANON_KEY')
@@ -60,6 +61,7 @@ Deno.serve(async req => {
       return reply({ ok: false, error: 'Selecciona una sucursal y dirección válidas' }, 400)
 
     const db = createClient(url, service, { auth: { autoRefreshToken: false, persistSession: false } })
+    stage = 'customer_address'
     const { data: address, error: addressError } = await db.from('flashfood_customer_addresses')
       .select('id,latitude,longitude').eq('id', input.address_id).eq('user_id', userData.user.id).maybeSingle()
     if (addressError) throw addressError
@@ -67,6 +69,7 @@ Deno.serve(async req => {
     if (!coord(address.latitude, 90) || !coord(address.longitude, 180))
       return reply({ ok: false, error: 'Agrega coordenadas GPS a tu dirección para calcular el envío' }, 422)
 
+    stage = 'restaurant_catalog'
     const { data: catalog, error: catalogError } = await db.rpc('flashfood_catalogo_restaurantes', { p_app_codigo: 'flashfood_mobile' })
     if (catalogError) throw catalogError
     const { data: erpCatalog, error: erpError } = await db.rpc('flashfood_erp_public_restaurants')
@@ -84,6 +87,7 @@ Deno.serve(async req => {
 
     // La tabla configuracion conserva coordenadas independientes de sucursales.
     // No sobrescribirlas con lat/lng nulos que pudiera traer el catálogo.
+    stage = 'branch_coordinates'
     const { data: dbBranch, error: branchError } = await db.from('sucursales')
       .select('id,lat,lng').eq('id', input.branch_id).maybeSingle()
     if (branchError) throw branchError
@@ -99,10 +103,12 @@ Deno.serve(async req => {
       return reply({ ok: false, error: 'La sucursal aún no tiene coordenadas configuradas en sucursales ni configuracion' }, 422)
     const bLat = branchLat, bLng = branchLng
 
+    stage = 'drivers_availability'
     const { data: available, error: availabilityError } = await db.rpc('flashfood_delivery_disponible')
     if (availabilityError) throw availabilityError
     if (available !== true) return reply({ ok: false, error: 'No hay repartidores disponibles en este momento' }, 409)
 
+    stage = 'delivery_tariff'
     const { data: tariff, error: tariffError } = await db.from('flashfood_global_settings')
       .select('value').eq('key', 'delivery_global_tariff').maybeSingle()
     if (tariffError) throw tariffError
@@ -119,12 +125,16 @@ Deno.serve(async req => {
     if ([base, included, perKm, nightFee, rainFee].some(x => x === null))
       return reply({ ok: false, error: 'La tarifa global del delivery tiene valores inválidos' }, 503)
 
+    stage = 'route_provider'
+    if (!Deno.env.get('OPENROUTESERVICE_API_KEY'))
+      return reply({ ok: false, error: 'No está configurada OPENROUTESERVICE_API_KEY en los secretos de Locales' }, 503)
     const road = await roadDistance(bLat, bLng, address.latitude, address.longitude)
     const distance = road.distance_km
     // Straight-line distance is only an estimate: road routing is not yet connected.
     const night = isNight(config.night_start, config.night_end)
     const rain = config.rain_enabled === true
     const extra = round(Math.max(0, distance - included!) * perKm!)
+    stage = 'business_delivery_settings'
     const { data: businessSettings, error: businessError } = await db.from('flashfood_business_settings')
       .select('free_delivery').eq('business_id', branch.local_id).maybeSingle()
     if (businessError) throw businessError
@@ -138,7 +148,10 @@ Deno.serve(async req => {
       message: 'Cotización calculada sobre vías transitables. Se confirmará nuevamente antes de crear el pedido.',
     })
   } catch (error) {
-    console.error('flashfood-delivery-quote', error)
-    return reply({ ok: false, error: 'No se pudo cotizar el envío. Revisa la configuración y vuelve a intentar.' }, 500)
+    const problem = error as { message?: string; code?: string }
+    console.error('flashfood-delivery-quote', stage, problem?.code ?? '', problem?.message ?? 'Error')
+    const known = problem?.code ? ' [' + problem.code + ']' : ''
+    const explanation = problem?.message?.slice(0, 240) ?? 'Error inesperado'
+    return reply({ ok: false, error: 'Cotización (' + stage + ')' + known + ': ' + explanation }, 500)
   }
 })
