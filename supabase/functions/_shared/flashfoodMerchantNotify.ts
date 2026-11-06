@@ -37,12 +37,12 @@ const url64=(input:Uint8Array)=>btoa(String.fromCharCode(...input)).replace(/\+/
 const encode=(value:unknown)=>url64(new TextEncoder().encode(JSON.stringify(value)))
 const keyBytes=(pem:string)=>Uint8Array.from(atob(pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g,'')),c=>c.charCodeAt(0))
 
-export async function pushToDevices(db:SupabaseClient,userIds:string[],orderId:string, title='Nuevo pedido FlashFood', message='Hay una compra nueva en tu negocio. Revisa los pedidos.', type='merchant_order'):Promise<void>{
+export async function pushToDevices(db:SupabaseClient,userIds:string[],orderId:string, title='Nuevo pedido FlashFood', message='Hay una compra nueva en tu negocio. Revisa los pedidos.', type='merchant_order'):Promise<number>{
  const {data,error}=await db.from('flashfood_push_devices')
   .select('id,user_id,token,platform').eq('active',true).in('user_id',userIds).limit(250)
  if(error)throw error
  const devices=(data||[]) as Device[]
- if(!devices.length)return
+ if(!devices.length)return 0
  if(devices.length>200)throw new Error('Demasiados dispositivos: se requiere despachador por lotes.')
  const ios=devices.some(x=>x.platform==='ios'),android=devices.some(x=>x.platform==='android')
  let firebaseToken='',firebaseProject='',apnsToken=''
@@ -84,6 +84,7 @@ export async function pushToDevices(db:SupabaseClient,userIds:string[],orderId:s
  const host=Deno.env.get('FLASHFOOD_APNS_ENVIRONMENT')==='production'
    ? 'https://api.push.apple.com':'https://api.sandbox.push.apple.com'
  const bundle=Deno.env.get('FLASHFOOD_APNS_BUNDLE_ID')||'com.flashfood.mobile'
+ let delivered=0
  for(const device of devices){
   try{
    const response=device.platform==='android'
@@ -100,6 +101,7 @@ export async function pushToDevices(db:SupabaseClient,userIds:string[],orderId:s
          type,order_id:orderId}),
        signal:AbortSignal.timeout(10000),
       })
+   if(response.ok)delivered++
    if(!response.ok){
     const msg=(await response.text()).slice(0,120)
     console.error('Push order',response.status,msg)
@@ -108,4 +110,5 @@ export async function pushToDevices(db:SupabaseClient,userIds:string[],orderId:s
    }
   }catch(err){console.error('Fallo push merchant:',err instanceof Error?err.message:'Error')}
  }
+ return delivered
 }
