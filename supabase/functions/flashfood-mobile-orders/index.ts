@@ -35,6 +35,19 @@ const hm = (v:unknown) => {
 }
 const tariffAmount = (v:unknown) => typeof v==='number'&&Number.isFinite(v)&&v>=0?v:0
 const errorInfo = (error:unknown) => error instanceof Error?error.message:'Error de operación'
+const toMobile=(o:Record<string,any>)=>{
+ const pm=o.payment_method==='payphone'?'tarjeta':o.payment_method==='cash'?'efectivo':
+  o.payment_method==='transfer'?'transferencia':'local'
+ const status=o.status==='in_transit'?'picked_up':o.status==='pending'
+  ? ((pm==='tarjeta'||pm==='transferencia')&&o.payment_status!=='paid'?'pending_payment':'placed') : o.status
+ return {...o,status,payment_method:pm,
+  payment_status:o.payment_review_status==='awaiting_verification'?'awaiting_verification':o.payment_status,
+  modality:o.mobile_modality|| (o.fulfillment==='delivery'?'domicilio':'retirar'),
+  branch_id:o.mobile_branch_id,business_id:o.mobile_local_id,
+  address_snapshot:o.delivery_address,assigned_driver_id:o.driver_id,
+  subtotal:o.products_total,service_fee:o.platform_surcharge,
+  total:o.grand_total,note:o.customer_note}
+}
 
 Deno.serve(async req => {
   if(req.method==='OPTIONS')return new Response(null,{headers:cors})
@@ -66,21 +79,21 @@ Deno.serve(async req => {
 
     if(action==='list'){
       const q=admin&&body.scope==='all'
-        ? db.from('flashfood_mobile_orders').select('*').order('created_at',{ascending:false}).limit(100)
+        ? db.from('flashfood_orders').select('*').order('created_at',{ascending:false}).limit(100)
         : driverRole&&body.scope==='driver'&&driver
-        ? db.from('flashfood_mobile_orders').select('*').eq('assigned_driver_id',driver.id).order('created_at',{ascending:false}).limit(100)
-        : db.from('flashfood_mobile_orders').select('*').eq('customer_id',userId).order('created_at',{ascending:false}).limit(100)
+        ? db.from('flashfood_orders').select('*').eq('driver_id',driver.id).order('created_at',{ascending:false}).limit(100)
+        : db.from('flashfood_orders').select('*').eq('customer_id',userId).order('created_at',{ascending:false}).limit(100)
       const {data,error}=await q
       if(error)throw error
-      return send({ok:true,orders:data||[]})
+      return send({ok:true,orders:(data||[]).filter(x=>x.mobile_branch_id).map(toMobile)})
     }
 
     if(action==='create'){
       if(!uuid(body.idempotency_key)||!uuid(body.branch_id))return fail('Solicitud de pedido inválida')
-      const {data:existing,error:existingError}=await db.from('flashfood_mobile_orders')
-        .select('id,status,total,payment_status,payment_method,payphone_link').eq('customer_id',userId).eq('idempotency_key',body.idempotency_key).maybeSingle()
+      const {data:existing,error:existingError}=await db.from('flashfood_orders')
+        .select('*').eq('customer_id',userId).eq('idempotency_key',body.idempotency_key).maybeSingle()
       if(existingError)throw existingError
-      if(existing)return send({ok:true,order:existing,reused:true})
+      if(existing)return send({ok:true,order:toMobile(existing),reused:true})
       const modality=String(body.modalidad||'')
       const method=String(body.payment_method||'')
       if(!['domicilio','retirar','servir'].includes(modality))return fail('Modalidad inválida')
@@ -181,42 +194,49 @@ Deno.serve(async req => {
       const total=dollars(subtotal+fee+tip+service)
       if(!money(body.expected_total)||Math.abs(cents(body.expected_total as number)-cents(total))>1)
         return fail('El precio o la tarifa cambiaron. Actualiza el carrito antes de confirmar.',409)
-      const paymentStatus=method==='transferencia'?'awaiting_verification':'pending'
-      const status=method==='tarjeta'||method==='transferencia'?'pending_payment':'placed'
-      const {data:order,error:orderError}=await db.from('flashfood_mobile_orders').insert({
-        customer_id:userId,idempotency_key:body.idempotency_key,branch_id:branch.sucursal_id,business_id:branch.local_id,
-        address_id:addressId,address_snapshot:addressSnapshot,modality,status,payment_method:method,
-        payment_status:paymentStatus,subtotal,delivery_fee:fee,tip,service_fee:service,total,
-        route_km:km,route_duration_minutes:minutes,note,
+      const paymentStatus='pending'
+      const methodDb=method==='tarjeta'?'payphone':method==='efectivo'?'cash':method==='transferencia'?'transfer':'merchant'
+      const {data:order,error:orderError}=await db.from('flashfood_orders').insert({
+        customer_id:userId,idempotency_key:body.idempotency_key,source_system:'restaurant_erp',
+        source_branch_id:branch.sucursal_id,fulfillment:modality==='domicilio'?'delivery':'pickup',
+        mobile_local_id:branch.local_id,mobile_branch_id:branch.sucursal_id,mobile_modality:modality,
+        address_id:addressId,delivery_address:addressSnapshot,status:'pending',payment_method:methodDb,
+        payment_status:paymentStatus,payment_review_status:method==='transferencia'?'awaiting_verification':'none',
+        products_total:subtotal,delivery_fee:fee,tip,platform_surcharge:service,grand_total:total,
+        route_km:km,route_duration_minutes:minutes,customer_note:note,
       }).select('*').single()
       if(orderError){
         if(orderError.code==='23505'){
-          const {data:duplicate}=await db.from('flashfood_mobile_orders').select('*')
+          const {data:duplicate}=await db.from('flashfood_orders').select('*')
             .eq('customer_id',userId).eq('idempotency_key',body.idempotency_key).maybeSingle()
-          if(duplicate)return send({ok:true,order:duplicate,reused:true})
+          if(duplicate)return send({ok:true,order:toMobile(duplicate),reused:true})
         }
         throw orderError
       }
-      const {error:itemError}=await db.from('flashfood_mobile_order_items').insert(items.map(x=>({...x,order_id:order.id})))
+      const {error:itemError}=await db.from('flashfood_order_items').insert(items.map(x=>({
+        order_id:order.id,source_product_id:x.product_id,source_presentation_id:x.presentation_id,
+        product_name_snapshot:x.name,presentation_name_snapshot:x.presentation_name,
+        quantity:x.quantity,unit_price:x.unit_price,note:x.note,
+      })))
       if(itemError){
         // Never dispatch a partial order.
-        await db.from('flashfood_mobile_orders').update({status:'cancelled'}).eq('id',order.id)
+        await db.from('flashfood_orders').update({status:'cancelled'}).eq('id',order.id)
         throw itemError
       }
-      const {error:billingError}=await db.rpc('flashfood_mobile_attach_billing',{
+      const {error:billingError}=await db.rpc('flashfood_attach_order_billing',{
         p_order_id:order.id,p_billing:invoiceBilling,
       })
       if(billingError){
         // No rider was assigned and no payment started. Remove partial order and its items.
-        const {error:cleanupError}=await db.from('flashfood_mobile_orders').delete().eq('id',order.id)
+        const {error:cleanupError}=await db.from('flashfood_orders').delete().eq('id',order.id)
         if(cleanupError)console.error('No se pudo revertir pedido fiscal incompleto:',cleanupError.code)
         throw new Error('No se pudo guardar la información de facturación del pedido: '+billingError.message)
       }
-      if(status==='placed'&&modality==='domicilio'){
-        const {error:assignError}=await db.rpc('flashfood_mobile_assign_driver',{p_order_id:order.id})
+      if(method!=='tarjeta'&&method!=='transferencia'&&modality==='domicilio'){
+        const {error:assignError}=await db.rpc('flashfood_assign_driver',{p_order_id:order.id})
         if(assignError)console.error('dispatch pending',assignError.message)
       }
-      if(status==='placed'){
+      if(method!=='tarjeta'&&method!=='transferencia'){
         try{await notifyFlashFoodMerchant(db,order.id)}
         catch(err){console.error('Alerta comercial pendiente:',err instanceof Error?err.message:'Error')}
         try{
@@ -224,31 +244,31 @@ Deno.serve(async req => {
           if(!sync.synced)console.warn('Pedido pendiente sincronización ERP:',sync.reason)
         }catch(error){console.error('Aviso ERP pendiente:',error instanceof Error?error.message:'Error')}
       }
-      return send({ok:true,order,requires_payment:method==='tarjeta',requires_verification:method==='transferencia'})
+      return send({ok:true,order:toMobile(order),requires_payment:method==='tarjeta',requires_verification:method==='transferencia'})
     }
 
     if(action==='status'){
       if(!uuid(body.order_id))return fail('Pedido inválido')
-      const {data:order,error:readError}=await db.from('flashfood_mobile_orders').select('*').eq('id',body.order_id).maybeSingle()
+      const {data:order,error:readError}=await db.from('flashfood_orders').select('*').eq('id',body.order_id).maybeSingle()
       if(readError)throw readError
       if(!order)return fail('Pedido no encontrado',404)
-      if(order.customer_id!==userId&&!admin&&(!driver||order.assigned_driver_id!==driver.id))return fail('No autorizado',403)
+      if(order.customer_id!==userId&&!admin&&(!driver||order.driver_id!==driver.id))return fail('No autorizado',403)
       let position=null
-      if(['accepted','picked_up'].includes(order.status)&&order.assigned_driver_id){
-        const {data,error:locationError}=await db.from('flashfood_mobile_driver_positions')
-          .select('latitude,longitude,accuracy_m,recorded_at').eq('driver_id',order.assigned_driver_id).eq('order_id',order.id).maybeSingle()
+      if(['accepted','in_transit'].includes(order.status)&&order.driver_id){
+        const {data,error:locationError}=await db.from('flashfood_driver_positions')
+          .select('latitude,longitude,accuracy_m,recorded_at').eq('driver_id',order.driver_id).eq('order_id',order.id).maybeSingle()
         if(locationError)throw locationError
         position=data
       }
-      return send({ok:true,order,position})
+      return send({ok:true,order:toMobile(order),position})
     }
 
     if(action==='driver_orders'){
       if(!driverRole||!driver)return fail('No autorizado',403)
-      const {data,error}=await db.from('flashfood_mobile_orders').select('*').eq('assigned_driver_id',driver.id)
-        .in('status',['assigned','accepted','picked_up']).order('created_at',{ascending:true})
+      const {data,error}=await db.from('flashfood_orders').select('*').eq('assigned_driver_id',driver.id)
+        .in('status',['assigned','accepted','in_transit']).order('created_at',{ascending:true})
       if(error)throw error
-      return send({ok:true,orders:data||[]})
+      return send({ok:true,orders:(data||[]).map(toMobile)})
     }
 
     if(action==='driver_transition'){
@@ -256,34 +276,34 @@ Deno.serve(async req => {
       if(!uuid(body.order_id))return fail('Pedido inválido')
       const next=String(body.status||'')
       if(!['accepted','picked_up','delivered'].includes(next))return fail('Transición inválida')
-      const previous=next==='accepted'?'assigned':next==='picked_up'?'accepted':'picked_up'
-      const {data:current,error:currentError}=await db.from('flashfood_mobile_orders')
+      const previous=next==='accepted'?'assigned':next==='picked_up'?'accepted':'in_transit'
+      const {data:current,error:currentError}=await db.from('flashfood_orders')
         .select('id,payment_method,payment_status').eq('id',body.order_id).eq('assigned_driver_id',driver.id).eq('status',previous).maybeSingle()
       if(currentError)throw currentError
       if(!current)return fail('Pedido no asignado o transición inválida',409)
-      if(next==='delivered'&&current.payment_method==='efectivo'&&body.cash_collected!==true)
+      if(next==='delivered'&&current.payment_method==='cash'&&body.cash_collected!==true)
         return fail('Debes confirmar que recibiste el efectivo antes de cerrar la entrega',409)
-      const changes:Record<string,unknown>={status:next,updated_at:new Date().toISOString()}
-      if(next==='delivered'&&current.payment_method==='efectivo')changes.payment_status='awaiting_verification'
-      const {data:updated,error}=await db.from('flashfood_mobile_orders').update(changes)
+      const changes:Record<string,unknown>={status:next==='picked_up'?'in_transit':next,updated_at:new Date().toISOString()}
+      if(next==='delivered'&&current.payment_method==='efectivo')changes.payment_review_status='awaiting_verification'
+      const {data:updated,error}=await db.from('flashfood_orders').update(changes)
         .eq('id',body.order_id).eq('assigned_driver_id',driver.id).eq('status',previous).select('*').maybeSingle()
       if(error)throw error
       if(!updated)return fail('Pedido no asignado o transición de estado inválida',409)
       if(next==='delivered'){
-        await db.from('flashfood_mobile_driver_positions').delete().eq('driver_id',driver.id)
+        await db.from('flashfood_driver_positions').delete().eq('driver_id',driver.id)
         await db.from('flashfood_drivers').update({availability:'available',updated_at:new Date().toISOString()}).eq('id',driver.id)
       }
-      return send({ok:true,order:updated})
+      return send({ok:true,order:toMobile(updated)})
     }
 
     if(action==='driver_location'){
       if(!driverRole||!driver?.active||!driver.verified)return fail('Repartidor no autorizado',403)
       if(!uuid(body.order_id)||!originOK(body.latitude,body.longitude))return fail('Ubicación inválida')
-      const {data:order,error:readError}=await db.from('flashfood_mobile_orders').select('id')
-        .eq('id',body.order_id).eq('assigned_driver_id',driver.id).in('status',['accepted','picked_up']).maybeSingle()
+      const {data:order,error:readError}=await db.from('flashfood_orders').select('id')
+        .eq('id',body.order_id).eq('assigned_driver_id',driver.id).in('status',['accepted','in_transit']).maybeSingle()
       if(readError)throw readError
       if(!order)return fail('La ubicación solo puede compartirse durante una entrega aceptada',403)
-      const {error}=await db.from('flashfood_mobile_driver_positions').upsert({
+      const {error}=await db.from('flashfood_driver_positions').upsert({
         driver_id:driver.id,order_id:order.id,latitude:body.latitude,longitude:body.longitude,
         accuracy_m:money(body.accuracy_m)?body.accuracy_m:null,recorded_at:new Date().toISOString(),
       },{onConflict:'driver_id'})
@@ -293,19 +313,19 @@ Deno.serve(async req => {
 
     if(action==='dispatch_pending'){
       if(!admin)return fail('Solo Superadmin',403)
-      const {data:pending,error}=await db.from('flashfood_mobile_orders').select('id')
-        .eq('status','placed').eq('modality','domicilio').order('created_at',{ascending:true}).limit(50)
+      const {data:pending,error}=await db.from('flashfood_orders').select('id')
+        .eq('status','pending').eq('fulfillment','delivery').not('mobile_branch_id','is',null).order('created_at',{ascending:true}).limit(50)
       if(error)throw error
       let count=0
       for(const order of pending||[]){
-        const {data:assigned,error:assignError}=await db.rpc('flashfood_mobile_assign_driver',{p_order_id:order.id})
+        const {data:assigned,error:assignError}=await db.rpc('flashfood_assign_driver',{p_order_id:order.id})
         if(assignError)throw assignError
         if(assigned){
           count++
-          const {data:card}=await db.from('flashfood_mobile_orders').select('payment_method,payment_status')
+          const {data:card}=await db.from('flashfood_orders').select('payment_method,payment_status')
             .eq('id',order.id).maybeSingle()
-          if(card?.payment_method==='tarjeta'&&card.payment_status==='paid'){
-            const {error:ledgerError}=await db.rpc('flashfood_stage_card_settlements',{p_order_id:order.id})
+          if(card?.payment_method==='payphone'&&card.payment_status==='paid'){
+            const {error:ledgerError}=await db.rpc('flashfood_stage_card_obligations',{p_order_id:order.id})
             if(ledgerError)console.error('Obligación repartidor pendiente',ledgerError.message)
           }
         }
@@ -316,28 +336,28 @@ Deno.serve(async req => {
     if(action==='verify_transfer'){
       if(!admin)return fail('Solo Superadmin puede verificar transferencias',403)
       if(!uuid(body.order_id)||body.approved!==true)return fail('Se requiere aprobación explícita y comprobación bancaria')
-      const {data:order,error}=await db.from('flashfood_mobile_orders').update({
-        status:'placed',payment_status:'paid',updated_at:new Date().toISOString(),
-      }).eq('id',body.order_id).eq('payment_method','transferencia').eq('payment_status','awaiting_verification').eq('status','pending_payment').select('*').maybeSingle()
+      const {data:order,error}=await db.from('flashfood_orders').update({
+        payment_status:'paid',payment_review_status:'none',updated_at:new Date().toISOString(),
+      }).eq('id',body.order_id).eq('payment_method','transfer').eq('payment_status','pending').eq('payment_review_status','awaiting_verification').eq('status','pending').select('*').maybeSingle()
       if(error)throw error
       if(!order)return fail('Transferencia no pendiente',409)
-      if(order.modality==='domicilio')await db.rpc('flashfood_mobile_assign_driver',{p_order_id:order.id})
+      if(order.fulfillment==='delivery')await db.rpc('flashfood_assign_driver',{p_order_id:order.id})
       try{await notifyFlashFoodMerchant(db,order.id)}
       catch(err){console.error('Alerta comercial pendiente:',err)}
       try{
         const sync=await syncFlashFoodOrderToErp(db,order.id,true)
         if(!sync.synced)console.warn('Aviso ERP pendiente:',sync.reason)
       }catch(error){console.error('Aviso ERP pendiente:',error)}
-      return send({ok:true,order})
+      return send({ok:true,order:toMobile(order)})
     }
 
     if(action==='verify_cash'){
       if(!admin)return fail('Solo Superadmin puede conciliar efectivo',403)
       if(!uuid(body.order_id)||body.approved!==true)return fail('Confirma el efectivo recibido contra la caja',400)
-      const {data:order,error}=await db.from('flashfood_mobile_orders').update({
-        payment_status:'paid',updated_at:new Date().toISOString(),
-      }).eq('id',body.order_id).eq('payment_method','efectivo').eq('status','delivered')
-        .eq('payment_status','awaiting_verification').select('*').maybeSingle()
+      const {data:order,error}=await db.from('flashfood_orders').update({
+        payment_status:'paid',payment_review_status:'none',updated_at:new Date().toISOString(),
+      }).eq('id',body.order_id).eq('payment_method','cash').eq('status','delivered')
+        .eq('payment_review_status','awaiting_verification').select('*').maybeSingle()
       if(error)throw error
       if(!order)return fail('Efectivo no pendiente de conciliación',409)
       return send({ok:true,order})
@@ -346,11 +366,11 @@ Deno.serve(async req => {
 
     if(action==='settlement_list'){
       if(!admin)return fail('Solo Superadmin puede consultar liquidaciones',403)
-      const {data,error}=await db.from('flashfood_settlement_obligations')
-        .select('id,order_id,beneficiary_type,merchant_local_id,driver_id,erp_business_id,erp_branch_id,erp_synced_at,amount_due,amount_paid,status,created_at')
+      const {data,error}=await db.from('flashfood_financial_obligations')
+        .select('id,order_id,debtor_type,creditor_type,creditor_id,amount,settled_amount,status,erp_business_id,erp_branch_id,erp_synced_at,created_at')
         .order('created_at',{ascending:false}).limit(300)
       if(error)throw error
-      return send({ok:true,rows:data||[]})
+      return send({ok:true,rows:(data||[]).filter(x=>x.debtor_type==='platform').map(x=>({...x,beneficiary_type:x.creditor_type,merchant_local_id:x.creditor_type==='merchant'?x.creditor_id:null,driver_id:x.creditor_type==='driver'?x.creditor_id:null,amount_due:x.amount,amount_paid:x.settled_amount,status:x.status==='settled'?'paid':x.status}))})
     }
 
     if(action==='settlement_transfer'){
@@ -358,12 +378,12 @@ Deno.serve(async req => {
       if(!uuid(body.obligation_id)||!money(body.amount)||!body.amount||typeof body.reference!=='string'
          ||body.reference.trim().length<3||typeof body.transfer_date!=='string'
          ||!/^\\d{4}-\\d{2}-\\d{2}$/.test(body.transfer_date))return fail('Ingresa importe, fecha y referencia bancaria válidos')
-      const {data:row,error}=await db.rpc('flashfood_record_settlement_transfer',{
+      const {data:row,error}=await db.rpc('flashfood_record_transfer',{
         p_obligation_id:body.obligation_id,p_amount:body.amount,
         p_reference:body.reference.trim(),p_date:body.transfer_date,p_actor:userId,
       })
       if(error)throw error
-      if(row?.beneficiary_type==='merchant'){
+      if(row?.creditor_type==='merchant'){
         try{
           const sync=await syncFlashFoodOrderToErp(db,row.order_id,false)
           if(!sync.synced)console.warn('Pago pendiente reflejar en ERP:',sync.reason)
@@ -375,12 +395,12 @@ Deno.serve(async req => {
     if(action==='settlement_sync'){
       if(!admin)return fail('Solo Superadmin',403)
       if(!uuid(body.order_id))return fail('Pedido inválido')
-      const {data:order,error}=await db.from('flashfood_mobile_orders')
-        .select('id,payment_method,payment_status,modality').eq('id',body.order_id).maybeSingle()
+      const {data:order,error}=await db.from('flashfood_orders')
+        .select('id,payment_method,payment_status,fulfillment').eq('id',body.order_id).maybeSingle()
       if(error)throw error
       if(!order)return fail('Pedido no encontrado',404)
-      if(order.payment_method==='tarjeta'&&order.payment_status==='paid'){
-        const {error:stageError}=await db.rpc('flashfood_stage_card_settlements',{p_order_id:order.id})
+      if(order.payment_method==='payphone'&&order.payment_status==='paid'){
+        const {error:stageError}=await db.rpc('flashfood_stage_card_obligations',{p_order_id:order.id})
         if(stageError)throw stageError
       }
       const result=await syncFlashFoodOrderToErp(db,order.id,true)
@@ -390,8 +410,8 @@ Deno.serve(async req => {
 
     if(action==='payment_link'){
       if(!uuid(body.order_id))return fail('Pedido inválido')
-      const {data:order,error}=await db.from('flashfood_mobile_orders').select('*')
-        .eq('id',body.order_id).eq('customer_id',userId).eq('payment_method','tarjeta').maybeSingle()
+      const {data:order,error}=await db.from('flashfood_orders').select('*')
+        .eq('id',body.order_id).eq('customer_id',userId).eq('payment_method','payphone').maybeSingle()
       if(error)throw error
       if(!order)return fail('Pedido no encontrado',404)
       if(order.payment_status==='paid')return send({ok:true,paid:true})
@@ -401,7 +421,7 @@ Deno.serve(async req => {
       if(Deno.env.get('PAYPHONE_ENABLE_LIVE_CHARGES')!=='true')
         return fail('Cobro con tarjeta bloqueado hasta validar ambiente, impuestos y conciliación PayPhone.',503)
       const tx='F'+String(order.id).replaceAll('-','').slice(0,14)
-      const amount=cents(Number(order.total))
+      const amount=cents(Number(order.grand_total))
       const responseUrl=Deno.env.get('PAYPHONE_RESPONSE_URL')
       if(!responseUrl||!/^https:\/\//.test(responseUrl))return fail('Configura PAYPHONE_RESPONSE_URL con la URL pública de retorno de PayPhone.',503)
       const response=await fetch('https://pay.payphonetodoesposible.com/api/button/Prepare',{
@@ -415,7 +435,7 @@ Deno.serve(async req => {
       const prepared=await response.json()
       const link=prepared?.payWithCard
       if(typeof link!=='string'||!/^https:\/\//.test(link))throw new Error('Respuesta inesperada de PayPhone: falta payWithCard')
-      const {error:updateError}=await db.from('flashfood_mobile_orders')
+      const {error:updateError}=await db.from('flashfood_orders')
         .update({payphone_link:link,payphone_client_tx_id:tx}).eq('id',order.id)
       if(updateError)throw updateError
       return send({ok:true,link})
