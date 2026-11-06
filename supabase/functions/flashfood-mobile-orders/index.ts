@@ -125,6 +125,9 @@ Deno.serve(async req => {
       const permitted=[...(Array.isArray(catalog)?catalog:[]),...(Array.isArray(erpCatalog)?erpCatalog:[])]
       const branch=permitted.find(x=>x.sucursal_id===body.branch_id)
       if(!branch||!branch.acepta_pedidos||!branch.abierto)return fail('La sucursal está cerrada o no admite pedidos',409)
+      const {data:erpLink,error:erpLinkError}=await db.from('flashfood_erp_catalog_branches')
+        .select('erp_branch_id').eq('sucursal_id',branch.sucursal_id).maybeSingle()
+      if(erpLinkError)throw erpLinkError
 
       const productsIds=[...new Set(submitted.map(x=>x.productoId))]
       if(productsIds.some(x=>!uuid(x)))return fail('Producto inválido')
@@ -201,8 +204,8 @@ Deno.serve(async req => {
       const paymentStatus='pending'
       const methodDb=method==='tarjeta'?'payphone':method==='efectivo'?'cash':method==='transferencia'?'transfer':'merchant'
       const {data:order,error:orderError}=await db.from('flashfood_orders').insert({
-        customer_id:userId,idempotency_key:body.idempotency_key,source_system:'restaurant_erp',
-        source_branch_id:branch.sucursal_id,fulfillment:modality==='domicilio'?'delivery':'pickup',
+        customer_id:userId,idempotency_key:body.idempotency_key,source_system:erpLink?'multicomercios':'restaurant_erp',
+        source_branch_id:erpLink?.erp_branch_id||branch.sucursal_id,fulfillment:modality==='domicilio'?'delivery':'pickup',
         mobile_local_id:branch.local_id,mobile_branch_id:branch.sucursal_id,mobile_modality:modality,
         address_id:addressId,delivery_address:addressSnapshot,status:'pending',payment_method:methodDb,
         payment_status:paymentStatus,payment_review_status:method==='transferencia'?'awaiting_verification':'none',
