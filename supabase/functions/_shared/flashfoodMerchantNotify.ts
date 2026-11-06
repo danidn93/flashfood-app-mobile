@@ -3,15 +3,15 @@ import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0
 // Notification delivery is best effort; durable alerts are stored before attempting push.
 // Server-side membership checks prevent notifying employees of unrelated branches.
 export async function notifyFlashFoodMerchant(db:SupabaseClient,orderId:string):Promise<number>{
- const {data:order,error:orderError}=await db.from('flashfood_mobile_orders')
-   .select('id,business_id,branch_id,status').eq('id',orderId).maybeSingle()
+ const {data:order,error:orderError}=await db.from('flashfood_orders')
+   .select('id,mobile_local_id,mobile_branch_id,status').eq('id',orderId).maybeSingle()
  if(orderError)throw orderError
- if(!order||!['placed','assigned','accepted','picked_up','delivered'].includes(order.status))return 0
+ if(!order||!['pending','assigned','accepted','in_transit','delivered','picked_up'].includes(order.status))return 0
  const {data:grants,error:accessError}=await db.from('flashfood_business_access')
-   .select('user_id,role,branch_id').eq('business_id',order.business_id).eq('active',true)
+   .select('user_id,role,branch_id').eq('business_id',order.mobile_local_id).eq('active',true)
  if(accessError)throw accessError
  const recipients=[...new Set((grants||[]).filter(g=>
-   ['admin','empleado'].includes(g.role)&&(!g.branch_id||g.branch_id===order.branch_id))
+   ['admin','empleado'].includes(g.role)&&(!g.branch_id||g.branch_id===order.mobile_branch_id))
    .map(g=>g.user_id))]
  if(!recipients.length)return 0
  const {data:already,error:existingError}=await db.from('flashfood_mobile_merchant_alerts')
@@ -22,7 +22,7 @@ export async function notifyFlashFoodMerchant(db:SupabaseClient,orderId:string):
  if(!pending.length)return 0
  const {error:writeError}=await db.from('flashfood_mobile_merchant_alerts')
   .upsert(pending.map(userId=>({
-    order_id:order.id,user_id:userId,business_id:order.business_id,branch_id:order.branch_id,
+    order_id:order.id,user_id:userId,business_id:order.mobile_local_id,branch_id:order.mobile_branch_id,
     title:'Nuevo pedido FlashFood',
     message:'Hay un pedido nuevo para atender en la sucursal.',
   })),{onConflict:'order_id,user_id',ignoreDuplicates:true})
