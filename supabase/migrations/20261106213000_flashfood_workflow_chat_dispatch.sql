@@ -29,6 +29,7 @@ create table if not exists public.flashfood_delivery_offers (
  offered_at timestamptz not null default now(),
  expires_at timestamptz not null default (now()+interval '60 seconds'),
  responded_at timestamptz,
+ notified_at timestamptz,
  unique(order_id,driver_id)
 );
 create unique index if not exists ff_one_pending_offer_per_order on public.flashfood_delivery_offers(order_id) where status='pending';
