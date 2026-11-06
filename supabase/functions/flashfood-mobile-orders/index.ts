@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { syncFlashFoodOrderToErp } from '../_shared/flashfoodErpBridge.ts'
+import { notifyFlashFoodMerchant } from '../_shared/flashfoodMerchantNotify.ts'
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
 const send = (data: Record<string, unknown>, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
@@ -216,6 +217,8 @@ Deno.serve(async req => {
         if(assignError)console.error('dispatch pending',assignError.message)
       }
       if(status==='placed'){
+        try{await notifyFlashFoodMerchant(db,order.id)}
+        catch(err){console.error('Alerta comercial pendiente:',err instanceof Error?err.message:'Error')}
         try{
           const sync=await syncFlashFoodOrderToErp(db,order.id,true)
           if(!sync.synced)console.warn('Pedido pendiente sincronización ERP:',sync.reason)
@@ -319,6 +322,8 @@ Deno.serve(async req => {
       if(error)throw error
       if(!order)return fail('Transferencia no pendiente',409)
       if(order.modality==='domicilio')await db.rpc('flashfood_mobile_assign_driver',{p_order_id:order.id})
+      try{await notifyFlashFoodMerchant(db,order.id)}
+      catch(err){console.error('Alerta comercial pendiente:',err)}
       try{
         const sync=await syncFlashFoodOrderToErp(db,order.id,true)
         if(!sync.synced)console.warn('Aviso ERP pendiente:',sync.reason)
