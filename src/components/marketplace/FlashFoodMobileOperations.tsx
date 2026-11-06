@@ -21,7 +21,7 @@ export default function FlashFoodMobileOperations(){
   catch(e){setError(e instanceof Error?e.message:'No se pudo consultar pedidos')}
   finally{setLoading(false)}
  },[])
- useEffect(()=>{void load()},[load])
+ useEffect(()=>{queueMicrotask(()=>{void load()})},[load])
  const dispatch=async()=>{
   setAction('dispatch');setError('');setNotice('')
   try{const r=await call('dispatch_pending');setNotice('Pedidos asignados: '+r.assigned);await load()}
