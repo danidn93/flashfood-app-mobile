@@ -9,6 +9,7 @@ import {
   suscribirseAlCarrito,
 } from './services/carrito'
 import CarritoPage from './pages/CarritoPage'
+import PedidosPage from './pages/PedidosPage'
 import DireccionesPage from './pages/DireccionesPage'
 import { direccionSeleccionada, observarDireccion } from './services/direcciones'
 import {
@@ -258,7 +259,7 @@ function AppLayout() {
 
         <Route
           path="/pedidos"
-          element={<SectionPage titulo="Mis pedidos" />}
+          element={<PedidosPage />}
         />
 
         <Route
