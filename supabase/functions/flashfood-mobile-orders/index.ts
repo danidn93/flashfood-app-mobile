@@ -89,6 +89,80 @@ Deno.serve(async req => {
       return send({ok:true,orders:(data||[]).filter(x=>x.mobile_branch_id).map(toMobile)})
     }
 
+    if(action==='chat_list'||action==='chat_send'){
+      if(!uuid(body.order_id))return fail('Pedido inválido')
+      const {data:order,error:orderErr}=await db.from('flashfood_orders')
+       .select('id,customer_id,driver_id,status,fulfillment').eq('id',body.order_id).maybeSingle()
+      if(orderErr)throw orderErr
+      if(!order)return fail('Pedido inexistente',404)
+      const isCustomer=order.customer_id===userId
+      const isRider=driverRole&&!!driver&&order.driver_id===driver.id&&order.fulfillment==='delivery'
+      if(!isCustomer&&!isRider)return fail('No tienes permiso para consultar este chat',403)
+      const {data:progress,error:progressErr}=await db.from('flashfood_order_progress')
+       .select('stage').eq('order_id',order.id).maybeSingle()
+      if(progressErr)throw progressErr
+      if(action==='chat_list'){
+        const {data,error}=await db.from('flashfood_order_chat')
+         .select('id,sender_role,sender_name,message,created_at').eq('order_id',order.id)
+         .order('created_at',{ascending:true}).limit(200)
+        if(error)throw error
+        return send({ok:true,messages:data||[],stage:progress?.stage||'recibido',can_send:!['entregado','cancelado'].includes(progress?.stage||'')})
+      }
+      if(!progress||['entregado','cancelado'].includes(progress.stage))return fail('El chat está cerrado',409)
+      if(isRider&& !['retirando','reparto'].includes(progress.stage))return fail('El repartidor todavía no tiene asignada la conversación',403)
+      if(isCustomer&&order.status==='cancelled')return fail('Pedido cancelado',409)
+      const message=typeof body.message==='string'?body.message.trim():''
+      if(!message||message.length>1500)return fail('El mensaje debe tener entre 1 y 1500 caracteres',400)
+      const {data:inserted,error:insertErr}=await db.from('flashfood_order_chat').insert({
+       order_id:order.id,sender_id:userId,sender_role:isCustomer?'cliente':'delivery',
+       sender_name:isCustomer?'Cliente':'Repartidor',message,
+      }).select('id,sender_role,sender_name,message,created_at').single()
+      if(insertErr)throw insertErr
+      return send({ok:true,message:inserted})
+    }
+
+    if(action==='offer_list'){
+      if(!driverRole||!driver||!driver.active||!driver.verified)return fail('Perfil no autorizado',403)
+      const {data,error}=await db.from('flashfood_delivery_offers')
+       .select('id,order_id,expires_at,status').eq('driver_id',driver.id)
+       .eq('status','pending').gt('expires_at',new Date().toISOString())
+       .order('offered_at',{ascending:false}).limit(5)
+      if(error)throw error
+      return send({ok:true,offers:data||[]})
+    }
+    if(action==='offer_reply'){
+      if(!driverRole||!driver||!driver.active||!driver.verified||!uuid(body.offer_id)
+        ||typeof body.accept!=='boolean')return fail('Solicitud inválida',403)
+      const {data,error}=await db.rpc('flashfood_reply_delivery_offer',{
+        p_offer_id:body.offer_id,p_driver_id:driver.id,p_accept:body.accept})
+      if(error)throw error
+      if(data?.result==='rejected'&&data.order_id){
+        const {error:dispatchError}=await db.rpc('flashfood_offer_nearest',{p_order_id:data.order_id})
+        if(dispatchError)console.error('Reasignación pendiente',dispatchError.message)
+      }
+      return send({ok:true,...data})
+    }
+    if(action==='driver_presence'){
+      if(!driverRole||!driver||!driver.active||!driver.verified)return fail('Repartidor no autorizado',403)
+      if(!originOK(body.latitude,body.longitude))return fail('Ubicación inválida',400)
+      const {error}=await db.from('flashfood_driver_live_locations').upsert({
+       driver_id:driver.id,latitude:body.latitude,longitude:body.longitude,
+       recorded_at:new Date().toISOString()},{onConflict:'driver_id'})
+      if(error)throw error
+      return send({ok:true})
+    }
+    if(action==='workflow_status'){
+      if(!uuid(body.order_id))return fail('Pedido inválido',400)
+      const {data:order,error:readError}=await db.from('flashfood_orders')
+       .select('id,customer_id,driver_id,mobile_local_id').eq('id',body.order_id).maybeSingle()
+      if(readError)throw readError
+      if(!order||(!admin&&order.customer_id!==userId&&order.driver_id!==driver?.id))
+        return fail('No autorizado',403)
+      const {data:progress,error:progressError}=await db.from('flashfood_order_progress')
+       .select('stage,updated_at').eq('order_id',order.id).maybeSingle()
+      if(progressError)throw progressError
+      return send({ok:true,stage:progress?.stage||'recibido',updated_at:progress?.updated_at||null})
+    }
     if(action==='create'){
       if(!uuid(body.idempotency_key)||!uuid(body.branch_id))return fail('Solicitud de pedido inválida')
       const {data:existing,error:existingError}=await db.from('flashfood_orders')
@@ -252,10 +326,7 @@ Deno.serve(async req => {
         if(cleanupError)console.error('No se pudo revertir pedido fiscal incompleto:',cleanupError.code)
         throw new Error('No se pudo guardar la información de facturación del pedido: '+billingError.message)
       }
-      if(method!=='tarjeta'&&method!=='transferencia'&&modality==='domicilio'){
-        const {error:assignError}=await db.rpc('flashfood_assign_driver',{p_order_id:order.id})
-        if(assignError)console.error('dispatch pending',assignError.message)
-      }
+      // El despacho comienza únicamente cuando el restaurante marca el pedido como listo.
       if(method!=='tarjeta'&&method!=='transferencia'){
         try{await notifyFlashFoodMerchant(db,order.id)}
         catch(err){console.error('Alerta comercial pendiente:',err instanceof Error?err.message:'Error')}
@@ -264,6 +335,9 @@ Deno.serve(async req => {
           if(!sync.synced)console.warn('Pedido pendiente sincronización ERP:',sync.reason)
         }catch(error){console.error('Aviso ERP pendiente:',error instanceof Error?error.message:'Error')}
       }
+      const {error:progressError}=await db.from('flashfood_order_progress')
+       .upsert({order_id:order.id,stage:'recibido'},{onConflict:'order_id',ignoreDuplicates:true})
+      if(progressError)console.error('No se pudo inicializar el flujo del pedido',progressError.message)
       return send({ok:true,order:toMobile(order),requires_payment:method==='tarjeta',requires_verification:method==='transferencia'})
     }
 
@@ -316,8 +390,8 @@ Deno.serve(async req => {
       if(!driverRole||!driver?.active||!driver.verified)return fail('Perfil de repartidor sin habilitar',403)
       if(!uuid(body.order_id))return fail('Pedido inválido')
       const next=String(body.status||'')
-      if(!['accepted','picked_up','delivered'].includes(next))return fail('Transición inválida')
-      const previous=next==='accepted'?'assigned':next==='picked_up'?'accepted':'in_transit'
+      if(!['picked_up','delivered'].includes(next))return fail('Transición inválida')
+      const previous=next==='picked_up'?'assigned':'in_transit'
       const {data:current,error:currentError}=await db.from('flashfood_orders')
         .select('id,payment_method,payment_status').eq('id',body.order_id).eq('driver_id',driver.id).eq('status',previous).maybeSingle()
       if(currentError)throw currentError
@@ -330,6 +404,10 @@ Deno.serve(async req => {
         .eq('id',body.order_id).eq('driver_id',driver.id).eq('status',previous).select('*').maybeSingle()
       if(error)throw error
       if(!updated)return fail('Pedido no asignado o transición de estado inválida',409)
+      const stage=next==='picked_up'?'reparto':'entregado'
+      const {error:stageError}=await db.from('flashfood_order_progress').update({stage,updated_at:new Date().toISOString(),updated_by:userId}).eq('order_id',body.order_id)
+      if(stageError)throw stageError
+      await db.from('flashfood_order_stage_events').insert({order_id:body.order_id,stage,actor_id:userId})
       if(next==='delivered'){
         await db.from('flashfood_driver_positions').delete().eq('driver_id',driver.id)
         await db.from('flashfood_drivers').update({availability:'available',updated_at:new Date().toISOString()}).eq('id',driver.id)
@@ -354,12 +432,12 @@ Deno.serve(async req => {
 
     if(action==='dispatch_pending'){
       if(!admin)return fail('Solo Superadmin',403)
-      const {data:pending,error}=await db.from('flashfood_orders').select('id')
-        .eq('status','pending').eq('fulfillment','delivery').not('mobile_branch_id','is',null).order('created_at',{ascending:true}).limit(50)
+      const {data:pending,error}=await db.from('flashfood_order_progress').select('order_id')
+        .eq('stage','asignando').order('updated_at',{ascending:true}).limit(50)
       if(error)throw error
       let count=0
       for(const order of pending||[]){
-        const {data:assigned,error:assignError}=await db.rpc('flashfood_assign_driver',{p_order_id:order.id})
+        const {data:assigned,error:assignError}=await db.rpc('flashfood_offer_nearest',{p_order_id:order.order_id})
         if(assignError)throw assignError
         if(assigned){
           count++
@@ -382,7 +460,7 @@ Deno.serve(async req => {
       }).eq('id',body.order_id).eq('payment_method','transfer').eq('payment_status','pending').eq('payment_review_status','awaiting_verification').eq('status','pending').select('*').maybeSingle()
       if(error)throw error
       if(!order)return fail('Transferencia no pendiente',409)
-      if(order.fulfillment==='delivery')await db.rpc('flashfood_assign_driver',{p_order_id:order.id})
+      // El restaurante controla "Listo"; no asignar un repartidor todavía.
       try{await notifyFlashFoodMerchant(db,order.id)}
       catch(err){console.error('Alerta comercial pendiente:',err)}
       try{
