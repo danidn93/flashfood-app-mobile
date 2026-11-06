@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { syncFlashFoodOrderToErp } from '../_shared/flashfoodErpBridge.ts'
-import { notifyFlashFoodMerchant } from '../_shared/flashfoodMerchantNotify.ts'
+import { notifyFlashFoodMerchant, pushToDevices } from '../_shared/flashfoodMerchantNotify.ts'
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
 const send = (data: Record<string, unknown>, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
@@ -92,7 +92,7 @@ Deno.serve(async req => {
     if(action==='chat_list'||action==='chat_send'){
       if(!uuid(body.order_id))return fail('Pedido inválido')
       const {data:order,error:orderErr}=await db.from('flashfood_orders')
-       .select('id,customer_id,driver_id,status,fulfillment').eq('id',body.order_id).maybeSingle()
+       .select('id,customer_id,driver_id,status,fulfillment,mobile_local_id,mobile_branch_id').eq('id',body.order_id).maybeSingle()
       if(orderErr)throw orderErr
       if(!order)return fail('Pedido inexistente',404)
       const isCustomer=order.customer_id===userId
@@ -118,6 +118,20 @@ Deno.serve(async req => {
        sender_name:isCustomer?'Cliente':'Repartidor',message,
       }).select('id,sender_role,sender_name,message,created_at').single()
       if(insertErr)throw insertErr
+      try{
+       const recipientIds:string[]=[]
+       if(isRider)recipientIds.push(order.customer_id)
+       else if(['retirando','reparto'].includes(progress.stage)&&order.driver_id){
+         const {data:assigned}=await db.from('flashfood_drivers').select('auth_user_id').eq('id',order.driver_id).maybeSingle()
+         if(assigned?.auth_user_id)recipientIds.push(assigned.auth_user_id)
+       }else if(order.mobile_local_id){
+         const {data:grants}=await db.from('flashfood_business_access')
+          .select('user_id,branch_id').eq('business_id',order.mobile_local_id).eq('active',true)
+         recipientIds.push(...(grants||[]).filter(g=>!g.branch_id||g.branch_id===order.mobile_branch_id).map(g=>g.user_id))
+       }
+       if(recipientIds.length)await pushToDevices(db,[...new Set(recipientIds)],order.id,
+         'Nuevo mensaje en FlashFood','Tienes un mensaje sobre tu pedido.','order_chat')
+      }catch(err){console.error('Chat guardado; notificación pendiente:',errorInfo(err))}
       return send({ok:true,message:inserted})
     }
 
