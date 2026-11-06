@@ -129,5 +129,36 @@ end;
 $$;
 revoke all on function public.flashfood_offer_nearest(uuid),public.flashfood_reply_delivery_offer(uuid,uuid,boolean) from public,anon,authenticated;
 grant execute on function public.flashfood_offer_nearest(uuid),public.flashfood_reply_delivery_offer(uuid,uuid,boolean) to service_role;
+-- Tick function is called by pg_cron each minute to expire ignored offers and
+-- invite the next closest rider without relying on an open mobile application.
+create or replace function public.flashfood_tick_delivery_offers()
+returns integer language plpgsql security definer set search_path='' as $
+declare v_order record; v_result jsonb; v_count integer:=0;
+begin
+ for v_order in
+   select p.order_id from public.flashfood_order_progress p
+   where p.stage='asignando' order by p.updated_at asc limit 200
+ loop
+   v_result:=public.flashfood_offer_nearest(v_order.order_id);
+   if v_result->>'result'='offered' then v_count:=v_count+1;end if;
+ end loop;
+ return v_count;
+end;
+$;
+revoke all on function public.flashfood_tick_delivery_offers() from public,anon,authenticated;
+grant execute on function public.flashfood_tick_delivery_offers() to service_role;
+-- Schedule only if pg_cron is already installed (Supabase Database > Extensions).
+do $job$
+begin
+ if exists(select 1 from pg_extension where extname='pg_cron') then
+   if not exists(select 1 from cron.job where jobname='flashfood_delivery_offers_tick') then
+     perform cron.schedule('flashfood_delivery_offers_tick','* * * * *',
+       'select public.flashfood_tick_delivery_offers()');
+   end if;
+ else
+   raise notice 'pg_cron no instalado: habilitarlo para rotación automática de ofertas cada minuto';
+ end if;
+end
+$job$;
 -- Existing paid/eligible orders inherit progress lazily, without rewriting fiscal status.
 commit;
