@@ -173,6 +173,7 @@ export default function CarritoPage() {
   const [costoEnvio, setCostoEnvio] = useState<number | null>(null)
   const [direccionActiva, setDireccionActiva] = useState<DireccionEntrega | null>(null)
   const [cotizando, setCotizando] = useState(false)
+  const [creandoPedido, setCreandoPedido] = useState(false)
   const [detalleCotizacion, setDetalleCotizacion] = useState('')
   const [distanciaKm, setDistanciaKm] = useState<number | null>(null)
 
@@ -265,6 +266,44 @@ export default function CarritoPage() {
     }
   }, [subtotal, esDelivery, costoEnvio, propina, metodoPago])
   const pendienteEnvio = esDelivery && costoEnvio === null
+
+  async function confirmarPedido() {
+    if (!carrito?.items.length || creandoPedido) return
+    if (esDelivery && (!direccionActiva || pendienteEnvio || !deliveryDisponible)) {
+      setMensaje('Selecciona una dirección con GPS, verifica el precio del envío y la disponibilidad del repartidor.')
+      return
+    }
+    setCreandoPedido(true)
+    setMensaje('')
+    try {
+      const signature = JSON.stringify({ branch:carrito.sucursalId, modality:carrito.modalidad, items:carrito.items, method:metodoPago, address:direccionActiva?.id, tip })
+      const previous = sessionStorage.getItem('ff:pending-order-idempotency')
+      const saved = previous ? JSON.parse(previous) as {signature:string;key:string} : null
+      const key = saved?.signature===signature ? saved.key : crypto.randomUUID()
+      sessionStorage.setItem('ff:pending-order-idempotency', JSON.stringify({signature,key}))
+      const { data, error } = await supabase.functions.invoke('flashfood-mobile-orders', {
+        body: { action:'create', idempotency_key:key, branch_id:carrito.sucursalId, modalidad:carrito.modalidad,
+          payment_method:metodoPago, address_id:esDelivery?direccionActiva?.id:null, items:carrito.items,
+          tip:esDelivery?propina:0, note:nota },
+      })
+      if (error) throw new Error(error.message)
+      if (!data?.ok) throw new Error(data?.error || 'No fue posible crear el pedido')
+      if (metodoPago === 'tarjeta') {
+        const pay = await supabase.functions.invoke('flashfood-mobile-orders', { body:{action:'payment_link',order_id:data.order.id} })
+        if (pay.error) throw new Error(pay.error.message)
+        if (!pay.data?.ok || !pay.data?.link) throw new Error(pay.data?.error || 'No se pudo generar el enlace de pago')
+        window.open(String(pay.data.link), '_blank', 'noopener,noreferrer')
+        setMensaje('Pedido pendiente de confirmación del pago PayPhone. Abrimos un enlace seguro fuera de la aplicación.')
+      } else {
+        vaciarCarrito()
+        setCarrito(null)
+        sessionStorage.removeItem('ff:pending-order-idempotency')
+        navigate('/pedidos')
+      }
+    } catch (e) {
+      setMensaje(e instanceof Error?e.message:'No se pudo crear el pedido')
+    } finally { setCreandoPedido(false) }
+  }
   const datosFacturacionCompletos = !!(
     facturacion.nombre.trim() && facturacion.identificacion.trim() && facturacion.correo.trim()
   )
@@ -462,12 +501,12 @@ export default function CarritoPage() {
             </section>
             {mensaje && <div className="mx-4 mt-4 flex items-center gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-700"><AlertCircle size={17} />{mensaje}</div>}
             <div className="bg-white px-4 pb-6 pt-4">
-              <button type="button" disabled
-                className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-2xl bg-orange-500 px-4 py-4 text-base font-bold text-white opacity-70">
-                {esDelivery && metodoPago === 'tarjeta' ? 'Continuar con PayPhone' : 'Confirmar pedido'}
+              <button type="button" disabled={creandoPedido || cotizando || (esDelivery && (pendienteEnvio || !deliveryDisponible))} onClick={() => void confirmarPedido()}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 px-4 py-4 text-base font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
+                {creandoPedido ? 'Creando pedido...' : esDelivery && metodoPago === 'tarjeta' ? 'Continuar con PayPhone' : 'Confirmar pedido'}
                 <ChevronRight size={20} />
               </button>
-              <p className="mt-2 text-center text-xs text-gray-400">Pendiente de conectar la creación real del pedido y el pago.</p>
+              <p className="mt-2 text-center text-xs text-gray-400">El servidor verifica precios y distancia vial. Transferencias requieren aprobación; tarjeta requiere confirmación del proveedor.</p>
             </div>
           </>
         )}
