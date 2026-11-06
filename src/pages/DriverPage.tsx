@@ -4,7 +4,7 @@ import { Bike, CheckCircle2, CircleOff, LocateFixed, MapPin, RefreshCw, ShieldAl
 import { roleRequest } from '../services/roles'
 import { supabase } from '../lib/supabase'
 
-type Driver={id:string;full_name:string;phone:string|null;vehicle_type:string|null;availability:'offline'|'available'|'busy';active:boolean;verified:boolean}
+type Driver={id:string;full_name:string;phone:string|null;vehicle_type:string|null;vehicle_plate:string|null;photo_storage_path:string|null;availability:'offline'|'available'|'busy';active:boolean;verified:boolean}
 type Order={id:string;payment_method:string;status:'assigned'|'accepted'|'picked_up';address_snapshot:Record<string,unknown>|null;route_km:number|null;total:number;created_at:string}
 const statusText={offline:'Desconectado',available:'Disponible',busy:'Ocupado'}
 const next:Record<string,{status:'accepted'|'picked_up'|'delivered';label:string}>={assigned:{status:'accepted',label:'Aceptar entrega'},accepted:{status:'picked_up',label:'Marcar como recogido'},picked_up:{status:'delivered',label:'Marcar como entregado'}}
@@ -15,6 +15,9 @@ export default function DriverPage(){
  const [saving,setSaving]=useState(false)
  const [error,setError]=useState('')
  const [notice,setNotice]=useState('')
+ const [vehicleType,setVehicleType]=useState('')
+ const [vehiclePlate,setVehiclePlate]=useState('')
+ const [photo,setPhoto]=useState<File|null>(null)
  const [gps,setGps]=useState<{lat:number;lng:number;accuracy:number}|null>(null)
  const reload=useCallback(async()=>{
   setLoading(true)
@@ -26,6 +29,8 @@ export default function DriverPage(){
    if(assignments.error)throw new Error(assignments.error.message)
    if(!assignments.data?.ok)throw new Error(assignments.data?.error||'No fue posible consultar entregas')
    setDriver(profile.driver)
+   setVehicleType(profile.driver?.vehicle_type||'')
+   setVehiclePlate(profile.driver?.vehicle_plate||'')
    setOrders(assignments.data.orders as Order[])
    setError('')
   }catch(e){setError(e instanceof Error?e.message:'No se pudo cargar el panel')}
@@ -48,6 +53,29 @@ export default function DriverPage(){
    const result=await roleRequest<{driver:Driver}>('driver_set_availability',{availability})
    setDriver(result.driver);setNotice(availability==='available'?'Estás disponible para nuevas entregas.':'Te has desconectado.')
   }catch(e){setError(e instanceof Error?e.message:'No se pudo actualizar el estado')}
+  finally{setSaving(false)}
+ }
+ const saveProfile=async()=>{
+  setSaving(true);setError('');setNotice('')
+  try{
+   const result=await roleRequest<{driver:Driver}>('driver_update_profile',{vehicle_type:vehicleType,vehicle_plate:vehiclePlate})
+   setDriver(result.driver)
+   if(photo){
+    if(photo.size>3145728||!['image/jpeg','image/png','image/webp'].includes(photo.type))
+      throw new Error('Selecciona una foto JPG, PNG o WebP de máximo 3 MB')
+    const base64=await new Promise<string>((resolve,reject)=>{
+      const reader=new FileReader()
+      reader.onload=()=>resolve(String(reader.result).split(',')[1]||'')
+      reader.onerror=()=>reject(new Error('No se pudo leer la foto'))
+      reader.readAsDataURL(photo)
+    })
+    const uploaded=await roleRequest<{driver:Driver}>('driver_upload_photo',{
+      image_base64:base64,mime_type:photo.type,
+    })
+    setDriver(uploaded.driver);setPhoto(null)
+   }
+   setNotice('Perfil actualizado. La foto y el vehículo aparecerán en pedidos asignados.')
+  }catch(e){setError(e instanceof Error?e.message:'No se pudo actualizar tu perfil')}
   finally{setSaving(false)}
  }
  const transition=async(o:Order)=>{
@@ -101,9 +129,30 @@ export default function DriverPage(){
     <div className="mt-5 flex items-center gap-2 text-sm font-semibold">{driver.availability==='available'?<CheckCircle2 className="text-green-600"/>:<CircleOff className="text-gray-400"/>}{statusText[driver.availability]}</div>
     {(!driver.active||!driver.verified)&&<p className="mt-4 flex gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900"><ShieldAlert className="shrink-0"/>El Superadmin debe activar y verificar tu perfil.</p>}
     <div className="mt-5 grid grid-cols-2 gap-3">
-     <button disabled={saving||!driver.active||!driver.verified||driver.availability!=='offline'} onClick={()=>void change('available')} className="rounded-xl bg-green-600 px-3 py-3 font-bold text-white disabled:opacity-40">Conectarme</button>
+     <button disabled={saving||!driver.active||!driver.verified||!driver.photo_storage_path||!driver.vehicle_type||!driver.vehicle_plate||driver.availability!=='offline'} onClick={()=>void change('available')} className="rounded-xl bg-green-600 px-3 py-3 font-bold text-white disabled:opacity-40">Conectarme</button>
      <button disabled={saving||driver.availability!=='available'} onClick={()=>void change('offline')} className="rounded-xl bg-gray-800 px-3 py-3 font-bold text-white disabled:opacity-40">Desconectarme</button>
     </div>
+   </section>
+   <section className="rounded-2xl bg-white p-5 shadow-sm space-y-3">
+     <h2 className="font-bold">Identificación del repartidor</h2>
+     <p className="text-sm text-gray-500">La foto, el tipo de vehículo y la placa son obligatorios para conectarte y serán visibles al cliente con una entrega asignada.</p>
+     <label className="block text-sm font-semibold">Foto de perfil (JPG, PNG, WebP; hasta 3 MB)
+       <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>setPhoto(e.target.files?.[0]||null)} className="mt-2 block w-full text-sm"/>
+     </label>
+     <label className="block text-sm font-semibold">Tipo de vehículo
+       <select className="mt-2 w-full rounded-xl border p-3" value={vehicleType} onChange={e=>setVehicleType(e.target.value)}>
+         <option value="">Selecciona</option>
+         <option value="Motocicleta">Motocicleta</option>
+         <option value="Automóvil">Automóvil</option>
+         <option value="Bicicleta">Bicicleta</option>
+         <option value="Otro">Otro</option>
+       </select>
+     </label>
+     <label className="block text-sm font-semibold">Placa del vehículo
+       <input className="mt-2 w-full rounded-xl border p-3" value={vehiclePlate} maxLength={12} onChange={e=>setVehiclePlate(e.target.value.toUpperCase())} placeholder="ABC1234"/>
+     </label>
+     <p className="text-xs text-gray-500">Foto: {driver.photo_storage_path?'Registrada':'Pendiente'}</p>
+     <button type="button" disabled={saving} onClick={()=>void saveProfile()} className="rounded-xl bg-orange-500 px-4 py-3 font-semibold text-white disabled:opacity-40">Guardar perfil</button>
    </section>
    <section className="space-y-3">
     <h2 className="text-lg font-extrabold">Mis entregas activas</h2>
