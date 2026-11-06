@@ -123,7 +123,7 @@ Deno.serve(async req=>{
    if(readError)throw readError
    if(!driver)return bad('No existe perfil vinculado a tu cuenta',404)
    if(target==='available'&&(!driver.active||!driver.verified))return bad('El Superadmin debe activar y verificar tu perfil antes de conectarte',403)
-   if(driver.availability==='busy'&&target==='available')return bad('No puedes conectarte mientras tienes una entrega en curso',409)
+   if(driver.availability==='busy')return bad('No puedes cambiar tu disponibilidad durante una entrega asignada',409)
    const {data,error}=await db.from('flashfood_drivers').update({availability:target,updated_at:new Date().toISOString()}).eq('id',driver.id).select('id,active,verified,availability,full_name,phone,vehicle_type').single()
    if(error)throw error
    return respond({ok:true,driver:data})
