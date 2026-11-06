@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import FlashFoodMobileOperations from '../components/marketplace/FlashFoodMobileOperations'
 import { assignBusinessRole, loadBusinesses, type Business } from '../services/roles'
 import { AlertCircle, Bike, ClipboardList, CreditCard, LayoutDashboard, RefreshCw, Settings, Store, Users, Search, Menu, X, Save, Pencil, Building2, ShieldCheck, ArrowLeft, BellRing, Send } from 'lucide-react'
 
@@ -358,6 +359,7 @@ export default function SuperadminPage() {
         </div>
       </section>}
 
+      {section === 'orders' && <FlashFoodMobileOperations />}
       {driverOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
         <div className="max-h-[90dvh] w-full max-w-xl space-y-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
           <div className="flex items-center justify-between">
