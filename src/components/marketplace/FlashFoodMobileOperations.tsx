@@ -28,6 +28,13 @@ export default function FlashFoodMobileOperations(){
   catch(e){setError(e instanceof Error?e.message:'No se pudo despachar')}
   finally{setAction('')}
  }
+ const approveCash=async(id:string)=>{
+  if(!window.confirm('¿Confirmas que el efectivo recaudado fue conciliado con caja?'))return
+  setAction(id);setError('');setNotice('')
+  try{await call('verify_cash',{order_id:id,approved:true});setNotice('Cobro en efectivo conciliado.');await load()}
+  catch(e){setError(e instanceof Error?e.message:'No se pudo conciliar efectivo')}
+  finally{setAction('')}
+ }
  const approve=async(id:string)=>{
   if(!window.confirm('Confirma que verificaste la transferencia directamente en tu banco. ¿Aprobar este pago?'))return
   setAction(id);setError('');setNotice('')
@@ -52,6 +59,7 @@ export default function FlashFoodMobileOperations(){
      <p className="font-bold">{o.status} · {o.modality} · {money(Number(o.total))}</p>
      <p className="text-xs text-gray-500">Pago: {o.payment_method} / {o.payment_status} · {o.assigned_driver_id?'Repartidor asignado':'Sin repartidor'}</p>
     </div>
+    {o.payment_method==='efectivo'&&o.status==='delivered'&&o.payment_status==='awaiting_verification'&&<button disabled={!!action} onClick={()=>void approveCash(o.id)} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">Conciliar efectivo</button>}
     {o.payment_method==='transferencia'&&o.payment_status==='awaiting_verification'&&<button disabled={!!action} onClick={()=>void approve(o.id)} className="flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"><Wallet size={16}/>Verifiqué transferencia</button>}
    </div>)}
   </div>
