@@ -285,15 +285,19 @@ Deno.serve(async req => {
         return fail('Cobro con tarjeta bloqueado hasta validar ambiente, impuestos y conciliación PayPhone.',503)
       const tx='F'+String(order.id).replaceAll('-','').slice(0,14)
       const amount=cents(Number(order.total))
-      const response=await fetch('https://pay.payphonetodoesposible.com/api/Links',{
+      const responseUrl=Deno.env.get('PAYPHONE_RESPONSE_URL')
+      if(!responseUrl||!/^https:\/\//.test(responseUrl))return fail('Configura PAYPHONE_RESPONSE_URL con la URL pública de retorno de PayPhone.',503)
+      const response=await fetch('https://pay.payphonetodoesposible.com/api/button/Prepare',{
         method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-        body:JSON.stringify({amount,amountWithoutTax:amount,currency:'USD',storeId,
-          clientTransactionId:tx,reference:'FlashFood '+String(order.id).slice(0,8),
-          oneTime:true,isAmountEditable:false}),signal:AbortSignal.timeout(12000),
+        body:JSON.stringify({amount,amountWithoutTax:amount,amountWithTax:0,tax:0,
+          currency:'USD',storeId,clientTransactionId:tx,responseUrl,
+          reference:'FlashFood '+String(order.id).slice(0,8),timeZone:-5}),
+        signal:AbortSignal.timeout(12000),
       })
-      if(!response.ok)throw new Error('PayPhone rechazó la generación del enlace ('+response.status+')')
-      const link=await response.json()
-      if(typeof link!=='string'||!/^https:\/\//.test(link))throw new Error('Respuesta inesperada de PayPhone')
+      if(!response.ok)throw new Error('PayPhone rechazó la preparación del cobro ('+response.status+')')
+      const prepared=await response.json()
+      const link=prepared?.payWithCard
+      if(typeof link!=='string'||!/^https:\/\//.test(link))throw new Error('Respuesta inesperada de PayPhone: falta payWithCard')
       const {error:updateError}=await db.from('flashfood_mobile_orders')
         .update({payphone_link:link,payphone_client_tx_id:tx}).eq('id',order.id)
       if(updateError)throw updateError
