@@ -178,11 +178,20 @@ Deno.serve(async req => {
           .eq('id',body.address_id).eq('user_id',userId).maybeSingle()
         if(addressError)throw addressError
         if(!address)return fail('La dirección no pertenece a tu cuenta',403)
-        if(!originOK(address.latitude,address.longitude)||!originOK(branch.lat,branch.lng))return fail('Se requieren coordenadas de dirección y sucursal',422)
+        const {data:coordsBranch,error:coordsBranchError}=await db.from('sucursales').select('lat,lng')
+          .eq('id',branch.sucursal_id).maybeSingle()
+        if(coordsBranchError)throw coordsBranchError
+        const {data:coordsConfig,error:coordsConfigError}=await db.from('configuracion').select('lat,lng')
+          .eq('sucursal_id',branch.sucursal_id).maybeSingle()
+        if(coordsConfigError)throw coordsConfigError
+        const latitude=originOK(coordsBranch?.lat,coordsBranch?.lng)?coordsBranch!.lat:coordsConfig?.lat
+        const longitude=originOK(coordsBranch?.lat,coordsBranch?.lng)?coordsBranch!.lng:coordsConfig?.lng
+        if(!originOK(address.latitude,address.longitude)||!originOK(latitude,longitude))
+          return fail('Se requieren coordenadas de dirección y sucursal',422)
         const {data:hasDriver,error:availableError}=await db.rpc('flashfood_delivery_disponible')
         if(availableError)throw availableError
         if(!hasDriver)return fail('No hay repartidores disponibles',409)
-        const routing=await road({lat:branch.lat,lng:branch.lng},{lat:address.latitude,lng:address.longitude})
+        const routing=await road({lat:latitude,lng:longitude},{lat:address.latitude,lng:address.longitude})
         km=routing.km;minutes=routing.minutes
         const {data:setting,error:settingError}=await db.from('flashfood_global_settings')
           .select('value').eq('key','delivery_global_tariff').maybeSingle()
