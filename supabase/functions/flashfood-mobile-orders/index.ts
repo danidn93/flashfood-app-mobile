@@ -7,7 +7,6 @@ const uuid = (v: unknown): v is string => typeof v === 'string' && /^[\da-f]{8}-
 const cents = (value: number) => Math.round((value + Number.EPSILON) * 100)
 const dollars = (value: number) => cents(value) / 100
 const money = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 100000
-const num = (v: unknown, fallback = 0) => typeof v === 'number' && Number.isFinite(v) ? v : fallback
 const originOK = (lat: unknown, lng: unknown) => typeof lat === 'number' && typeof lng === 'number' && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180
 const road = async (a: {lat:number;lng:number}, b: {lat:number;lng:number}) => {
   const key = Deno.env.get('OPENROUTESERVICE_API_KEY')
