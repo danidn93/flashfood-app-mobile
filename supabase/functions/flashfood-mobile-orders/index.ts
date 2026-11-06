@@ -188,6 +188,22 @@ Deno.serve(async req => {
       return send({ok:true,order,requires_payment:method==='tarjeta',requires_verification:method==='transferencia'})
     }
 
+    if(action==='status'){
+      if(!uuid(body.order_id))return fail('Pedido inválido')
+      const {data:order,error:readError}=await db.from('flashfood_mobile_orders').select('*').eq('id',body.order_id).maybeSingle()
+      if(readError)throw readError
+      if(!order)return fail('Pedido no encontrado',404)
+      if(order.customer_id!==userId&&!admin&&(!driver||order.assigned_driver_id!==driver.id))return fail('No autorizado',403)
+      let position=null
+      if(['accepted','picked_up'].includes(order.status)&&order.assigned_driver_id){
+        const {data,error:locationError}=await db.from('flashfood_mobile_driver_positions')
+          .select('latitude,longitude,accuracy_m,recorded_at').eq('driver_id',order.assigned_driver_id).eq('order_id',order.id).maybeSingle()
+        if(locationError)throw locationError
+        position=data
+      }
+      return send({ok:true,order,position})
+    }
+
     if(action==='driver_orders'){
       if(!driverRole||!driver)return fail('No autorizado',403)
       const {data,error}=await db.from('flashfood_mobile_orders').select('*').eq('assigned_driver_id',driver.id)
