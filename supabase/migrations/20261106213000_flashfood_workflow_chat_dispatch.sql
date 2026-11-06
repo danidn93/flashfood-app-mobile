@@ -102,7 +102,7 @@ declare offer_row record; order_row record; v_now timestamptz:=now();
 begin
  select * into offer_row from public.flashfood_delivery_offers where id=p_offer_id for update;
  if not found or offer_row.driver_id<>p_driver_id then return jsonb_build_object('result','not_found');end if;
- select id,driver_id,status from public.flashfood_orders where id=offer_row.order_id for update into order_row;
+ select id,driver_id,status into order_row from public.flashfood_orders where id=offer_row.order_id for update;
  if offer_row.status<>'pending' or offer_row.expires_at<=v_now or order_row.driver_id is not null then
    update public.flashfood_delivery_offers set status='expired',responded_at=v_now where id=p_offer_id and status='pending';
    return jsonb_build_object('result','expired');
