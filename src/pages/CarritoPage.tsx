@@ -176,7 +176,6 @@ export default function CarritoPage() {
   const [creandoPedido, setCreandoPedido] = useState(false)
   const [payphoneHabilitado, setPayphoneHabilitado] = useState(false)
   const [detalleCotizacion, setDetalleCotizacion] = useState('')
-  const [distanciaKm, setDistanciaKm] = useState<number | null>(null)
 
   useEffect(() => suscribirseAlCarrito(() => setCarrito(obtenerCarrito())), [])
   useEffect(() => {
@@ -216,7 +215,6 @@ export default function CarritoPage() {
     if (!direccionActiva) {
       queueMicrotask(() => {
         setCostoEnvio(null)
-        setDistanciaKm(null)
         setDetalleCotizacion('Selecciona una dirección guardada para cotizar el envío.')
       })
       return
@@ -224,7 +222,6 @@ export default function CarritoPage() {
     const cotizar = async () => {
       setCotizando(true)
       setCostoEnvio(null)
-      setDistanciaKm(null)
       setDetalleCotizacion('')
       try {
         const { data, error } = await supabase.functions.invoke('flashfood-delivery-quote', {
@@ -234,8 +231,7 @@ export default function CarritoPage() {
         if (!data?.ok) throw new Error(data?.error || 'No fue posible cotizar el envío')
         if (!active) return
         setCostoEnvio(Number(data.delivery_fee))
-        setDistanciaKm(Number(data.distance_km))
-        setDetalleCotizacion(String(data.message || 'Estimación geográfica'))
+        setDetalleCotizacion('')
       } catch (err) {
         if (active) setDetalleCotizacion(err instanceof Error ? err.message : 'Error de cotización')
       } finally {
@@ -338,7 +334,7 @@ export default function CarritoPage() {
       setMetodoPago(nuevaModalidad === 'domicilio' ? 'efectivo' : 'local')
       if (nuevaModalidad !== 'domicilio') setPropina(0)
       setModal(null)
-      setMensaje('Revisa los precios de los productos: algunas presentaciones pueden variar según la modalidad.')
+      setMensaje('')
     } catch {
       setMensaje('No se pudo guardar la modalidad del pedido.')
     }
@@ -506,7 +502,7 @@ export default function CarritoPage() {
                   <span>Total</span><span>{pendienteEnvio ? 'Por calcular' : dinero(desglose.total)}</span>
                 </div>
               </div>
-              {esDelivery && <p role="status" className="mt-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-800">{cotizando ? 'Calculando envío...' : detalleCotizacion || 'Selecciona tu dirección con GPS para estimar el costo.'}{distanciaKm !== null ? ` Distancia geográfica: ${distanciaKm.toFixed(2)} km.` : ''}</p>}
+              {esDelivery && detalleCotizacion && costoEnvio === null && !cotizando && <p role="alert" className="mt-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-800">{detalleCotizacion}</p>}
             </section>
             {mensaje && <div className="mx-4 mt-4 flex items-center gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-700"><AlertCircle size={17} />{mensaje}</div>}
             <div className="bg-white px-4 pb-6 pt-4">
@@ -515,7 +511,6 @@ export default function CarritoPage() {
                 {creandoPedido ? 'Creando pedido...' : esDelivery && metodoPago === 'tarjeta' ? 'Continuar con PayPhone' : 'Confirmar pedido'}
                 <ChevronRight size={20} />
               </button>
-              <p className="mt-2 text-center text-xs text-gray-400">El servidor verifica precios y distancia vial. Transferencias requieren aprobación; tarjeta requiere confirmación del proveedor.</p>
             </div>
           </>
         )}
