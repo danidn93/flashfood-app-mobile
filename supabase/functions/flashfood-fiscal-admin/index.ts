@@ -108,6 +108,13 @@ Deno.serve(async req=>{
       if(error)throw error
       return json({ok:true,message:'Datos fiscales guardados. Emisión desactivada hasta pruebas del SRI.'})
     }
+    if(action==='invoice_queue'){
+      const {data,error}=await db.from('flashfood_invoice_jobs')
+        .select('id,order_id,issuer_type,source_local_id,remote_erp_business_id,remote_erp_sale_id,status,attempt_count,last_error,created_at')
+        .order('created_at',{ascending:false}).limit(100)
+      if(error)throw error
+      return json({ok:true,rows:data||[]})
+    }
     if(action==='merchant_list'){
       const {data:locals,error:localsError}=await db.from('locales').select('id,nombre').order('nombre').limit(1000)
       if(localsError)throw localsError
