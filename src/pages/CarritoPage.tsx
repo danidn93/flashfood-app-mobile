@@ -292,7 +292,7 @@ export default function CarritoPage() {
       const { data, error } = await supabase.functions.invoke('flashfood-mobile-orders', {
         body: { action:'create', idempotency_key:key, branch_id:carrito.sucursalId, modalidad:carrito.modalidad,
           payment_method:metodoPago, address_id:esDelivery?direccionActiva?.id:null, items:carrito.items,
-          tip:esDelivery?propina:0, note:nota },
+          tip:esDelivery?propina:0, note:nota, expected_total:desglose.total },
       })
       if (error) throw new Error(error.message)
       if (!data?.ok) throw new Error(data?.error || 'No fue posible crear el pedido')
