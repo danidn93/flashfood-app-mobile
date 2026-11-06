@@ -188,4 +188,27 @@ end;
 $$;
 revoke all on function public.flashfood_erp_import_catalog(jsonb) from public,anon,authenticated;
 grant execute on function public.flashfood_erp_import_catalog(jsonb) to service_role;
+
+-- Public read-only projection; no private ERP identifiers or fiscal data.
+create or replace function public.flashfood_erp_public_restaurants()
+returns jsonb
+language sql stable security definer set search_path=''
+as $
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'local_id',l.id,'restaurante',l.nombre,
+  'nombre_comercial',l.nombre_comercial,
+  'sucursal_id',s.id,'sucursal',s.nombre,'direccion',s.direccion,
+  'telefono',s.telefono,'lat',s.lat,'lng',s.lng,
+  'abierto',coalesce(s.abierto,true),
+  'acepta_pedidos',bc.accepting_orders,
+  'logo_url',c.logo_url,'hero_bg_url',c.hero_bg_url
+ ) order by l.nombre,s.nombre),'[]'::jsonb)
+ from public.flashfood_erp_catalog_branches bc
+ join public.locales l on l.id=bc.local_id
+ join public.sucursales s on s.id=bc.sucursal_id
+ left join public.configuracion c on c.sucursal_id=s.id
+ where bc.published=true and l.activo=true and s.activo=true
+$;
+revoke all on function public.flashfood_erp_public_restaurants() from public;
+grant execute on function public.flashfood_erp_public_restaurants() to anon,authenticated,service_role;
 commit;
