@@ -85,6 +85,19 @@ Deno.serve(async req => {
       if(!['tarjeta','transferencia','efectivo','local'].includes(method))return fail('Método de pago inválido')
       if(modality==='domicilio'&&method==='local')return fail('Selecciona pago por tarjeta, transferencia o efectivo')
       if(modality!=='domicilio'&&method!=='local')return fail('El retiro o consumo debe pagarse en el establecimiento')
+      const rawBilling=body.billing&&typeof body.billing==='object'&&!Array.isArray(body.billing)
+        ? body.billing as Record<string,unknown> : {}
+      const billingName=typeof rawBilling.nombre==='string'?rawBilling.nombre.trim().slice(0,250):''
+      const billingId=typeof rawBilling.identificacion==='string'?rawBilling.identificacion.replace(/\s/g,'').slice(0,32):''
+      const billingEmail=typeof rawBilling.correo==='string'?rawBilling.correo.trim().toLowerCase().slice(0,254):''
+      const billingPhone=typeof rawBilling.telefono==='string'?rawBilling.telefono.trim().slice(0,30):''
+      const hasBuyerData=Boolean(billingName||billingId||billingEmail||billingPhone)
+      if(hasBuyerData&&(
+        billingName.length<3|| !/^(\d{10}|\d{13})$/.test(billingId) ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(billingEmail)
+      ))return fail('Completa nombre, cédula/RUC y correo válido para facturación, o deja los datos vacíos para consumidor final.')
+      const invoiceBilling={consumer_final:!hasBuyerData,nombre:billingName,
+        identificacion:billingId,correo:billingEmail,telefono:billingPhone}
       const note=typeof body.note==='string'?body.note.trim().slice(0,500):''
       const tip=modality==='domicilio'&&money(body.tip)?dollars(body.tip as number):0
       const submitted=body.items
@@ -187,6 +200,15 @@ Deno.serve(async req => {
         // Never dispatch a partial order.
         await db.from('flashfood_mobile_orders').update({status:'cancelled'}).eq('id',order.id)
         throw itemError
+      }
+      const {error:billingError}=await db.rpc('flashfood_mobile_attach_billing',{
+        p_order_id:order.id,p_billing:invoiceBilling,
+      })
+      if(billingError){
+        // No rider was assigned and no payment started. Remove partial order and its items.
+        const {error:cleanupError}=await db.from('flashfood_mobile_orders').delete().eq('id',order.id)
+        if(cleanupError)console.error('No se pudo revertir pedido fiscal incompleto:',cleanupError.code)
+        throw new Error('No se pudo guardar la información de facturación del pedido: '+billingError.message)
       }
       if(status==='placed'&&modality==='domicilio'){
         const {error:assignError}=await db.rpc('flashfood_mobile_assign_driver',{p_order_id:order.id})
