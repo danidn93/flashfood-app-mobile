@@ -16,7 +16,7 @@ async function erp(action:'catalog_businesses'|'catalog_export',businessId?:stri
   body:JSON.stringify({action,business_id:businessId}),signal:AbortSignal.timeout(30000),
  })
  const data=await response.json().catch(()=>({})) as Record<string,unknown>
- if(!response.ok||data.ok!==true)throw new Error(String(data.error||'No se pudo consultar catálogo ERP'))
+ if(!response.ok||data.ok!==true)throw new Error('Puente ERP ('+action+', HTTP '+response.status+'): '+String(data.error||'No se pudo consultar catálogo ERP'))
  return data
 }
 Deno.serve(async(req)=>{
@@ -93,7 +93,7 @@ Deno.serve(async(req)=>{
    }
    const payload=await erp('catalog_export',body.business_id)
    const {data,error}=await db.rpc('flashfood_erp_import_catalog',{p_payload:payload})
-   if(error)throw error
+   if(error)throw new Error('Importación en Locales ['+(error.code||'SQL')+']: '+error.message)
    return respond({ok:true,result:data})
   }
   if(action==='branch_coordinates'){
@@ -141,7 +141,9 @@ Deno.serve(async(req)=>{
   }
   return fail('Acción no soportada',404)
  }catch(error){
-  console.error('flashfood-catalog-sync',error instanceof Error?error.message:'Error')
-  return fail(error instanceof Error?error.message:'Error de sincronización',500)
+  const message=error instanceof Error?error.message:'Error de sincronización'
+  console.error('flashfood-catalog-sync:',message)
+  // Only authenticated superadmins can reach catalog actions; no credentials in errors.
+  return fail(message,500)
  }
 })
