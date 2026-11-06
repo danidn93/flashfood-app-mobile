@@ -15,7 +15,7 @@ export async function syncFlashFoodOrderToErp(db: Db, orderId: string, notify = 
     .select('origen,facturacion_flashfood_habilitada,negocio_origen_id')
     .eq('local_id',o.mobile_local_id).maybeSingle()
   if(settingError)throw settingError
-  if(!setting?.facturacion_flashfood_habilitada||setting.origen!=='multicomercios')
+  if(!setting||setting.origen!=='multicomercios'||!setting.negocio_origen_id)
     return {synced:false,reason:'Sin vínculo ERP habilitado'}
   const {data:link,error:linkError}=await db.from('flashfood_erp_branch_links')
     .select('erp_business_id,erp_branch_id').eq('flashfood_branch_id',o.mobile_branch_id)
