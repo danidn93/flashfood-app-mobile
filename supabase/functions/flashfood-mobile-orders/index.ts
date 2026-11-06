@@ -120,7 +120,10 @@ Deno.serve(async req => {
       if(!Array.isArray(submitted)||submitted.length===0||submitted.length>50)return fail('El carrito no contiene productos válidos')
       const {data:catalog,error:catalogError}=await db.rpc('flashfood_catalogo_restaurantes',{p_app_codigo:'flashfood_mobile'})
       if(catalogError)throw catalogError
-      const branch=(Array.isArray(catalog)?catalog:[]).find(x=>x.sucursal_id===body.branch_id)
+      const {data:erpCatalog,error:erpCatalogError}=await db.rpc('flashfood_erp_public_restaurants')
+      if(erpCatalogError)throw erpCatalogError
+      const permitted=[...(Array.isArray(catalog)?catalog:[]),...(Array.isArray(erpCatalog)?erpCatalog:[])]
+      const branch=permitted.find(x=>x.sucursal_id===body.branch_id)
       if(!branch||!branch.acepta_pedidos||!branch.abierto)return fail('La sucursal está cerrada o no admite pedidos',409)
 
       const productsIds=[...new Set(submitted.map(x=>x.productoId))]
