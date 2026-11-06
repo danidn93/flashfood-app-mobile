@@ -164,6 +164,8 @@ Deno.serve(async req => {
       const subtotal=subtotalCents/100
       const service=method==='tarjeta'?dollars((subtotal+fee+tip)*0.15):0
       const total=dollars(subtotal+fee+tip+service)
+      if(!money(body.expected_total)||Math.abs(cents(body.expected_total as number)-cents(total))>1)
+        return fail('El precio o la tarifa cambiaron. Actualiza el carrito antes de confirmar.',409)
       const paymentStatus=method==='transferencia'?'awaiting_verification':'pending'
       const status=method==='tarjeta'||method==='transferencia'?'pending_payment':'placed'
       const {data:order,error:orderError}=await db.from('flashfood_mobile_orders').insert({
