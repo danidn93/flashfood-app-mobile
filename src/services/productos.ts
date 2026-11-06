@@ -53,7 +53,10 @@ export function obtenerPrecioMinimo(
     return calcularPrecio(producto, modalidad)
   }
 
+  // La opción "Normal" usa el precio del producto y también debe
+  // participar en el mínimo, aunque existan presentaciones adicionales.
   return Math.min(
+    calcularPrecio(producto, modalidad),
     ...producto.presentaciones.map((presentacion) =>
       calcularPrecio(presentacion, modalidad),
     ),
