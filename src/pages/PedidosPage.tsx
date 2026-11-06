@@ -39,7 +39,7 @@ export default function PedidosPage(){
   finally{setLoading(false)}
  },[])
  useEffect(()=>{
-  void refresh()
+  queueMicrotask(()=>{void refresh()})
   const timer=window.setInterval(()=>{if(document.visibilityState==='visible')void refresh()},20000)
   return ()=>window.clearInterval(timer)
  },[refresh])
