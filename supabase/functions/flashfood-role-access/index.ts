@@ -126,7 +126,6 @@ Deno.serve(async req=>{
      if(error)throw error
      return respond({ok:true,message:data})
    }
-   if(!allowedAdmin(order.mobile_local_id))return bad('Solo un administrador puede cambiar estados',403)
    const next=String(body.stage||'')
    const expected:Record<string,string>={recibido:'preparando',preparando:'listo',listo:'asignando'}
    if(expected[stage]!==next)return bad('El estado no sigue el flujo permitido',409)
@@ -143,6 +142,17 @@ Deno.serve(async req=>{
    if(changeError)throw changeError
    if(!changed)return bad('El pedido fue actualizado por otra persona. Recarga.',409)
    await db.from('flashfood_order_stage_events').insert({order_id:order.id,stage:next,actor_id:caller})
+   if(next==='listo'&&order.fulfillment==='delivery'){
+     const {data:advance,error:advanceError}=await db.from('flashfood_order_progress')
+       .update({stage:'asignando',updated_at:new Date().toISOString(),updated_by:caller})
+       .eq('order_id',order.id).eq('stage','listo').select('order_id').maybeSingle()
+     if(advanceError)throw advanceError
+     if(!advance)return bad('El estado cambió. Actualiza el pedido.',409)
+     await db.from('flashfood_order_stage_events').insert({order_id:order.id,stage:'asignando',actor_id:caller})
+     const {data:offered,error:offerError}=await db.rpc('flashfood_offer_nearest',{p_order_id:order.id})
+     if(offerError)throw offerError
+     return respond({ok:true,stage:'asignando',dispatch:offered})
+   }
    if(next==='asignando'){
      const {data:offered,error:offerError}=await db.rpc('flashfood_offer_nearest',{p_order_id:order.id})
      if(offerError)throw offerError
