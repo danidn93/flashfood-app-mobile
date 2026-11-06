@@ -91,6 +91,65 @@ Deno.serve(async req=>{
    if(error)throw error
    return respond({ok:true,orders:data||[]})
   }
+  if(action==='merchant_stage'||action==='merchant_chat_list'||action==='merchant_chat_send'){
+   if(!validId(body.order_id))return bad('Pedido inválido',400)
+   const {data:order,error:orderError}=await db.from('flashfood_orders')
+     .select('id,mobile_local_id,mobile_branch_id,fulfillment,payment_method,payment_status,status')
+     .eq('id',body.order_id).maybeSingle()
+   if(orderError)throw orderError
+   if(!order||!order.mobile_local_id||!allowedRead(order.mobile_local_id))
+     return bad('No tienes permisos sobre este pedido',403)
+   if(!superadmin&&!grants.some(g=>g.business_id===order.mobile_local_id&&g.active
+     &&(!g.branch_id||g.branch_id===order.mobile_branch_id)))
+     return bad('No tienes acceso a esta sucursal',403)
+   const {data:progress,error:progressError}=await db.from('flashfood_order_progress')
+     .select('stage').eq('order_id',order.id).maybeSingle()
+   if(progressError)throw progressError
+   const stage=progress?.stage||'recibido'
+   if(action==='merchant_chat_list'){
+     const {data,error}=await db.from('flashfood_order_chat')
+      .select('id,sender_role,sender_name,message,created_at').eq('order_id',order.id)
+      .order('created_at',{ascending:true}).limit(200)
+     if(error)throw error
+     return respond({ok:true,messages:data||[],stage,
+       can_send:['recibido','preparando','listo','asignando'].includes(stage)})
+   }
+   if(action==='merchant_chat_send'){
+     if(!['recibido','preparando','listo','asignando'].includes(stage)||order.status==='cancelled')
+       return bad('La atención de este chat ya fue transferida o cerrada',409)
+     const message=typeof body.message==='string'?body.message.trim():''
+     if(!message||message.length>1500)return bad('Mensaje inválido',400)
+     const {data,error}=await db.from('flashfood_order_chat').insert({
+       order_id:order.id,sender_id:caller,sender_role:'restaurante',
+       sender_name:'Restaurante',message,
+     }).select('id,sender_role,sender_name,message,created_at').single()
+     if(error)throw error
+     return respond({ok:true,message:data})
+   }
+   if(!allowedAdmin(order.mobile_local_id))return bad('Solo un administrador puede cambiar estados',403)
+   const next=String(body.stage||'')
+   const expected:Record<string,string>={recibido:'preparando',preparando:'listo',listo:'asignando'}
+   if(expected[stage]!==next)return bad('El estado no sigue el flujo permitido',409)
+   if(order.status==='cancelled'||(order.payment_method==='payphone'||order.payment_method==='transfer')
+     &&order.payment_status!=='paid')return bad('No se puede preparar un pedido sin pago confirmado',409)
+   if(!progress){
+     const {error:initError}=await db.from('flashfood_order_progress')
+       .insert({order_id:order.id,stage:'recibido'})
+     if(initError&&initError.code!=='23505')throw initError
+   }
+   const {data:changed,error:changeError}=await db.from('flashfood_order_progress')
+      .update({stage:next,updated_at:new Date().toISOString(),updated_by:caller})
+      .eq('order_id',order.id).eq('stage',stage).select('order_id').maybeSingle()
+   if(changeError)throw changeError
+   if(!changed)return bad('El pedido fue actualizado por otra persona. Recarga.',409)
+   await db.from('flashfood_order_stage_events').insert({order_id:order.id,stage:next,actor_id:caller})
+   if(next==='asignando'){
+     const {data:offered,error:offerError}=await db.rpc('flashfood_offer_nearest',{p_order_id:order.id})
+     if(offerError)throw offerError
+     return respond({ok:true,stage:next,dispatch:offered})
+   }
+   return respond({ok:true,stage:next})
+  }
   if(action==='merchant_alerts'){
    const businessId=body.business_id
    if(!validId(businessId)||!allowedRead(businessId))return bad('Sin permiso sobre este negocio',403)
