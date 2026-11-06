@@ -283,6 +283,27 @@ Deno.serve(async req => {
       return send({ok:true,order:toMobile(order),position})
     }
 
+    if(action==='driver_identity'){
+      if(!uuid(body.order_id))return fail('Pedido inválido')
+      const {data:order,error:orderError}=await db.from('flashfood_orders')
+        .select('id,customer_id,driver_id,mobile_modality,status').eq('id',body.order_id).maybeSingle()
+      if(orderError)throw orderError
+      if(!order||order.customer_id!==userId||!order.driver_id||order.mobile_modality!=='domicilio'
+        ||['cancelled','pending'].includes(order.status))return fail('Repartidor no disponible para este pedido',404)
+      const {data:assigned,error:assignedError}=await db.from('flashfood_drivers')
+        .select('full_name,vehicle_type,vehicle_plate,photo_storage_path').eq('id',order.driver_id).maybeSingle()
+      if(assignedError)throw assignedError
+      if(!assigned)return fail('Repartidor no encontrado',404)
+      let photo_url:null|string=null
+      if(assigned.photo_storage_path){
+        const {data:signed,error:signError}=await db.storage.from('flashfood-driver-photos')
+          .createSignedUrl(assigned.photo_storage_path,120)
+        if(signError)console.error('driver identity signed url',signError.message)
+        else photo_url=signed?.signedUrl||null
+      }
+      return send({ok:true,driver:{name:assigned.full_name,vehicle_type:assigned.vehicle_type,
+        vehicle_plate:assigned.vehicle_plate,photo_url}})
+    }
     if(action==='driver_orders'){
       if(!driverRole||!driver)return fail('No autorizado',403)
       const {data,error}=await db.from('flashfood_orders').select('*').eq('driver_id',driver.id)
