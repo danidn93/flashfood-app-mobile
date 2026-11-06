@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
+import { syncFlashFoodOrderToErp } from '../_shared/flashfoodErpBridge.ts'
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
 const send = (data: Record<string, unknown>, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
@@ -214,6 +215,12 @@ Deno.serve(async req => {
         const {error:assignError}=await db.rpc('flashfood_mobile_assign_driver',{p_order_id:order.id})
         if(assignError)console.error('dispatch pending',assignError.message)
       }
+      if(status==='placed'){
+        try{
+          const sync=await syncFlashFoodOrderToErp(db,order.id,true)
+          if(!sync.synced)console.warn('Pedido pendiente sincronización ERP:',sync.reason)
+        }catch(error){console.error('Aviso ERP pendiente:',error instanceof Error?error.message:'Error')}
+      }
       return send({ok:true,order,requires_payment:method==='tarjeta',requires_verification:method==='transferencia'})
     }
 
@@ -290,7 +297,15 @@ Deno.serve(async req => {
       for(const order of pending||[]){
         const {data:assigned,error:assignError}=await db.rpc('flashfood_mobile_assign_driver',{p_order_id:order.id})
         if(assignError)throw assignError
-        if(assigned)count++
+        if(assigned){
+          count++
+          const {data:card}=await db.from('flashfood_mobile_orders').select('payment_method,payment_status')
+            .eq('id',order.id).maybeSingle()
+          if(card?.payment_method==='tarjeta'&&card.payment_status==='paid'){
+            const {error:ledgerError}=await db.rpc('flashfood_stage_card_settlements',{p_order_id:order.id})
+            if(ledgerError)console.error('Obligación repartidor pendiente',ledgerError.message)
+          }
+        }
       }
       return send({ok:true,assigned:count})
     }
@@ -304,6 +319,10 @@ Deno.serve(async req => {
       if(error)throw error
       if(!order)return fail('Transferencia no pendiente',409)
       if(order.modality==='domicilio')await db.rpc('flashfood_mobile_assign_driver',{p_order_id:order.id})
+      try{
+        const sync=await syncFlashFoodOrderToErp(db,order.id,true)
+        if(!sync.synced)console.warn('Aviso ERP pendiente:',sync.reason)
+      }catch(error){console.error('Aviso ERP pendiente:',error)}
       return send({ok:true,order})
     }
 
@@ -317,6 +336,51 @@ Deno.serve(async req => {
       if(error)throw error
       if(!order)return fail('Efectivo no pendiente de conciliación',409)
       return send({ok:true,order})
+    }
+
+
+    if(action==='settlement_list'){
+      if(!admin)return fail('Solo Superadmin puede consultar liquidaciones',403)
+      const {data,error}=await db.from('flashfood_settlement_obligations')
+        .select('id,order_id,beneficiary_type,merchant_local_id,driver_id,erp_business_id,erp_branch_id,erp_synced_at,amount_due,amount_paid,status,created_at')
+        .order('created_at',{ascending:false}).limit(300)
+      if(error)throw error
+      return send({ok:true,rows:data||[]})
+    }
+
+    if(action==='settlement_transfer'){
+      if(!admin)return fail('Solo Superadmin puede registrar transferencias',403)
+      if(!uuid(body.obligation_id)||!money(body.amount)||!body.amount||typeof body.reference!=='string'
+         ||body.reference.trim().length<3||typeof body.transfer_date!=='string'
+         ||!/^\\d{4}-\\d{2}-\\d{2}$/.test(body.transfer_date))return fail('Ingresa importe, fecha y referencia bancaria válidos')
+      const {data:row,error}=await db.rpc('flashfood_record_settlement_transfer',{
+        p_obligation_id:body.obligation_id,p_amount:body.amount,
+        p_reference:body.reference.trim(),p_date:body.transfer_date,p_actor:userId,
+      })
+      if(error)throw error
+      if(row?.beneficiary_type==='merchant'){
+        try{
+          const sync=await syncFlashFoodOrderToErp(db,row.order_id,false)
+          if(!sync.synced)console.warn('Pago pendiente reflejar en ERP:',sync.reason)
+        }catch(err){console.error('Reintentar sincronización ERP',err)}
+      }
+      return send({ok:true,row})
+    }
+
+    if(action==='settlement_sync'){
+      if(!admin)return fail('Solo Superadmin',403)
+      if(!uuid(body.order_id))return fail('Pedido inválido')
+      const {data:order,error}=await db.from('flashfood_mobile_orders')
+        .select('id,payment_method,payment_status,modality').eq('id',body.order_id).maybeSingle()
+      if(error)throw error
+      if(!order)return fail('Pedido no encontrado',404)
+      if(order.payment_method==='tarjeta'&&order.payment_status==='paid'){
+        const {error:stageError}=await db.rpc('flashfood_stage_card_settlements',{p_order_id:order.id})
+        if(stageError)throw stageError
+      }
+      const result=await syncFlashFoodOrderToErp(db,order.id,true)
+      if(!result.synced)return fail(result.reason||'No se pudo sincronizar',409)
+      return send({ok:true})
     }
 
     if(action==='payment_link'){
