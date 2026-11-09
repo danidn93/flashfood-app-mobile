@@ -185,10 +185,21 @@ Deno.serve(async req => {
       if(existing)return send({ok:true,order:toMobile(existing),reused:true})
       const modality=String(body.modalidad||'')
       const method=String(body.payment_method||'')
-      if(!['domicilio','retirar','servir'].includes(modality))return fail('Modalidad inválida')
+      if(!['domicilio','retirar'].includes(modality))return fail('Modalidad inválida')
       if(!['tarjeta','transferencia','efectivo','local'].includes(method))return fail('Método de pago inválido')
       if(modality==='domicilio'&&method==='local')return fail('Selecciona pago por tarjeta, transferencia o efectivo')
-      if(modality!=='domicilio'&&method!=='local')return fail('El retiro o consumo debe pagarse en el establecimiento')
+      if(modality!=='domicilio'&&method!=='local')return fail('El retiro debe pagarse en el establecimiento')
+      let pickupAt:null|string=null
+      if(body.scheduled_pickup_at!=null){
+        if(modality!=='retirar'||typeof body.scheduled_pickup_at!=='string'||!/[zZ]|[+-]\\d{2}:\\d{2}$/.test(body.scheduled_pickup_at))
+          return fail('La programación solo está disponible para retiro en local',400)
+        const scheduled=new Date(body.scheduled_pickup_at)
+        if(!Number.isFinite(scheduled.getTime())||
+          scheduled.getTime()<Date.now()+30*60*1000||
+          scheduled.getTime()>Date.now()+7*24*60*60*1000)
+          return fail('Programa tu retiro con al menos 30 minutos de anticipación y máximo 7 días',422)
+        pickupAt=scheduled.toISOString()
+      }
       const rawBilling=body.billing&&typeof body.billing==='object'&&!Array.isArray(body.billing)
         ? body.billing as Record<string,unknown> : {}
       const billingName=typeof rawBilling.nombre==='string'?rawBilling.nombre.trim().slice(0,250):''
@@ -248,7 +259,7 @@ Deno.serve(async req => {
         const presentation=item.presentacionId?presentations.get(item.presentacionId):null
         if(item.presentacionId&&(!presentation||presentation.producto_id!==product.id))return fail('Presentación no válida para el producto')
         const source=presentation||product
-        const raw=modality==='servir'?source.precio:source.precio_para_llevar??source.precio
+        const raw=source.precio_para_llevar??source.precio
         const unit=Number(raw)
         if(!Number.isFinite(unit)||unit<0)return fail('Precio inválido')
         const unitCents=cents(unit)
@@ -311,7 +322,7 @@ Deno.serve(async req => {
         address_id:addressId,delivery_address:addressSnapshot,status:'pending',payment_method:methodDb,
         payment_status:paymentStatus,payment_review_status:method==='transferencia'?'awaiting_verification':'none',
         products_total:subtotal,delivery_fee:fee,tip,platform_surcharge:service,grand_total:total,
-        route_km:km,route_duration_minutes:minutes,customer_note:note,
+        route_km:km,route_duration_minutes:minutes,customer_note:note,scheduled_pickup_at:pickupAt,
       }).select('*').single()
       if(orderError){
         if(orderError.code==='23505'){
