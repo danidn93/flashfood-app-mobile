@@ -8,7 +8,7 @@ import {
   ArrowLeft, ArrowRight, Bike, Check, ChevronRight,
   CreditCard, Landmark, MapPin, MessageSquareText,
   ReceiptText, Store, Wallet, ShoppingBag, Trash2,
-  Minus, Plus, Package, UtensilsCrossed, AlertCircle,
+  Minus, Plus, Package, CalendarClock, AlertCircle,
 } from 'lucide-react'
 import {
   obtenerCarrito, actualizarCantidadItem, vaciarCarrito,
@@ -165,6 +165,8 @@ export default function CarritoPage() {
   const [direccion, setDireccion] = useState('')
   const [referencia, setReferencia] = useState('')
   const [nota, setNota] = useState('')
+ const [programarRetiro,setProgramarRetiro] = useState(false)
+ const [fechaRetiro,setFechaRetiro] = useState('')
   const [facturacion, setFacturacion] = useState<DatosFacturacion>({
     nombre: '', identificacion: '', correo: '', telefono: '',
   })
@@ -270,9 +272,23 @@ export default function CarritoPage() {
   }, [subtotal, esDelivery, costoEnvio, propina, metodoPago])
   const pendienteEnvio = esDelivery && costoEnvio === null
 
+  const fechaRetiroValida = !programarRetiro || (
+    !!fechaRetiro && Number.isFinite(new Date(fechaRetiro).getTime()) &&
+    new Date(fechaRetiro).getTime() >= Date.now()+30*60000 &&
+    new Date(fechaRetiro).getTime() <= Date.now()+7*86400000
+  )
+  const fechaRetiroMinima = new Date(Date.now()+30*60000)
+  const fechaRetiroMaxima = new Date(Date.now()+7*86400000)
+  const formatoFechaLocal = (d:Date)=>[
+    d.getFullYear(),'-',String(d.getMonth()+1).padStart(2,'0'),'-',
+    String(d.getDate()).padStart(2,'0'),'T',
+    String(d.getHours()).padStart(2,'0'),':',String(d.getMinutes()).padStart(2,'0')
+  ].join('')
+
   async function confirmarPedido() {
     if (!carrito?.items.length || creandoPedido) return
     if (metodoPago==='tarjeta'&&!payphoneHabilitado){setMensaje('PayPhone todavía no está habilitado para cobros. Selecciona otro método de pago.');return}
+    if (!esDelivery && !fechaRetiroValida){setMensaje('Programa el retiro entre 30 minutos y 7 días desde ahora.');return}
     if (esDelivery && (!direccionActiva || pendienteEnvio || !deliveryDisponible)) {
       setMensaje('Selecciona una dirección con GPS, verifica el precio del envío y la disponibilidad del repartidor.')
       return
@@ -280,7 +296,7 @@ export default function CarritoPage() {
     setCreandoPedido(true)
     setMensaje('')
     try {
-      const signature = JSON.stringify({ branch:carrito.sucursalId, modality:carrito.modalidad, items:carrito.items, method:metodoPago, address:direccionActiva?.id, tip:propina, billing:facturacion })
+      const signature = JSON.stringify({ branch:carrito.sucursalId, modality:carrito.modalidad, items:carrito.items, method:metodoPago, address:direccionActiva?.id, tip:propina, billing:facturacion, pickup:!esDelivery&&programarRetiro?fechaRetiro:null })
       const previous = sessionStorage.getItem('ff:pending-order-idempotency')
       const saved = previous ? JSON.parse(previous) as {signature:string;key:string} : null
       const key = saved?.signature===signature ? saved.key : crypto.randomUUID()
@@ -289,7 +305,7 @@ export default function CarritoPage() {
         body: { action:'create', idempotency_key:key, branch_id:carrito.sucursalId, modalidad:carrito.modalidad,
           payment_method:metodoPago, address_id:esDelivery?direccionActiva?.id:null, items:carrito.items,
           tip:esDelivery?propina:0, note:nota, expected_total:desglose.total,
-          billing:facturacion },
+          billing:facturacion, scheduled_pickup_at:!esDelivery&&programarRetiro?new Date(fechaRetiro).toISOString():null },
       })
       if (error) throw new Error(error.message)
       if (!data?.ok) throw new Error(data?.error || 'No fue posible crear el pedido')
@@ -333,6 +349,7 @@ export default function CarritoPage() {
       setCarrito(actualizado)
       setMetodoPago(nuevaModalidad === 'domicilio' ? 'efectivo' : 'local')
       if (nuevaModalidad !== 'domicilio') setPropina(0)
+      if (nuevaModalidad === 'domicilio') {setProgramarRetiro(false);setFechaRetiro('')}
       setModal(null)
       setMensaje('')
     } catch {
@@ -455,6 +472,24 @@ export default function CarritoPage() {
               </Link>
             </section>
 
+            {!esDelivery && <section className="mt-2 bg-white px-4 py-5">
+              <h2 className="flex items-center gap-2 text-sm font-bold text-orange-600"><CalendarClock size={20}/> ¿Cuándo deseas retirar?</h2>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button type="button" onClick={()=>{setProgramarRetiro(false);setFechaRetiro('');setMensaje('')}}
+                  className={`rounded-xl border p-3 text-sm font-bold ${!programarRetiro?'border-orange-500 bg-orange-50 text-orange-700':'border-gray-200'}`}>Lo antes posible</button>
+                <button type="button" onClick={()=>{setProgramarRetiro(true);setMensaje('')}}
+                  className={`rounded-xl border p-3 text-sm font-bold ${programarRetiro?'border-orange-500 bg-orange-50 text-orange-700':'border-gray-200'}`}>Programar retiro</button>
+              </div>
+              {programarRetiro&&<label className="mt-4 block text-sm font-medium text-gray-700">
+                Fecha y hora de retiro (Ecuador)
+                <input type="datetime-local" value={fechaRetiro} min={formatoFechaLocal(fechaRetiroMinima)}
+                  max={formatoFechaLocal(fechaRetiroMaxima)} onChange={e=>setFechaRetiro(e.target.value)}
+                  className="mt-2 w-full rounded-xl border border-gray-200 p-3"/>
+                <span className="mt-2 block text-xs text-gray-500">Selecciona entre 30 minutos y 7 días. El restaurante verá tu hora solicitada y deberá preparar el pedido para ese momento.</span>
+                {!fechaRetiroValida&&<span className="mt-2 block text-xs text-red-600">Ingresa una fecha y hora válidas.</span>}
+              </label>}
+            </section>}
+
             <section className="mt-2 bg-white">
               <FilaEditable icono={<MessageSquareText size={23} />} titulo="Nota adicional (opcional)"
                 valor={nota || '¿Algo que el establecimiento deba considerar?'} placeholder={!nota} onClick={() => setModal('nota')} />
@@ -506,7 +541,7 @@ export default function CarritoPage() {
             </section>
             {mensaje && <div className="mx-4 mt-4 flex items-center gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-700"><AlertCircle size={17} />{mensaje}</div>}
             <div className="bg-white px-4 pb-6 pt-4">
-              <button type="button" disabled={creandoPedido || cotizando || (esDelivery && (pendienteEnvio || !deliveryDisponible))} onClick={() => void confirmarPedido()}
+              <button type="button" disabled={creandoPedido || cotizando || (!esDelivery&&!fechaRetiroValida) || (esDelivery && (pendienteEnvio || !deliveryDisponible))} onClick={() => void confirmarPedido()}
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 px-4 py-4 text-base font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
                 {creandoPedido ? 'Creando pedido...' : esDelivery && metodoPago === 'tarjeta' ? 'Continuar con PayPhone' : 'Confirmar pedido'}
                 <ChevronRight size={20} />
