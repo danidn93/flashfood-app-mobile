@@ -570,7 +570,6 @@ export default function CarritoPage() {
             {([
               { id: 'domicilio', titulo: 'Entrega a domicilio', descripcion: 'Un repartidor entrega tu pedido', icono: Bike },
               { id: 'retirar', titulo: 'Pide y retira', descripcion: 'Recoge y paga en el restaurante', icono: Package },
-              { id: 'servir', titulo: 'Para servirse', descripcion: 'Consume y paga en el restaurante', icono: UtensilsCrossed },
             ] as const).map(opcion => {
               const Icono = opcion.icono
               return (
