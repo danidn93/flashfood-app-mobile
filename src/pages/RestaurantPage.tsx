@@ -540,11 +540,10 @@ export default function RestaurantPage() {
           )}
 
           {/* Modalidad */}
-          <div className="mt-5 grid grid-cols-3 rounded-2xl bg-[#F3F4F6] p-1">
+          <div className="mt-5 grid grid-cols-2 rounded-2xl bg-[#F3F4F6] p-1">
             {([
               ['domicilio', 'Domicilio', Bike],
               ['retirar', 'Retirar', ShoppingBag],
-              ['servir', 'Servir', UtensilsCrossed],
             ] as const).map(([valor, etiqueta, Icono]) => (
               <button
                 key={valor}
@@ -553,7 +552,7 @@ export default function RestaurantPage() {
                   if (valor === 'domicilio') {
                     const disponible = await verificarDelivery()
                     if (!disponible) {
-                      setMensajeDelivery('No hay repartidores disponibles. Puedes retirar o consumir en el restaurante.')
+                      setMensajeDelivery('No hay repartidores disponibles. Puedes retirar el pedido en el restaurante.')
                       return
                     }
                   }
@@ -582,18 +581,14 @@ export default function RestaurantPage() {
           <div className="mt-4 flex items-start gap-2 rounded-xl bg-orange-50 px-3 py-3 text-xs text-orange-900">
             {modalidad === 'domicilio' ? (
               <Bike size={17} className="shrink-0" />
-            ) : modalidad === 'retirar' ? (
-              <ShoppingBag size={17} className="shrink-0" />
             ) : (
-              <UtensilsCrossed size={17} className="shrink-0" />
+              <ShoppingBag size={17} className="shrink-0" />
             )}
 
             <span>
               {modalidad === 'domicilio'
                 ? 'Precios para llevar. El costo de entrega se calculará al confirmar el pedido.'
-                : modalidad === 'retirar'
-                  ? 'Recoge tu pedido en el restaurante. Se aplican los precios para llevar.'
-                  : 'Consumo en el restaurante. Se aplican los precios normales.'}
+                : 'Recoge tu pedido ahora o prográmalo al confirmar. Se aplican los precios para llevar.'}
             </span>
           </div>
         </section>
