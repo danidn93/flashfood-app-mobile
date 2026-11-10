@@ -385,9 +385,7 @@ export default function CarritoPage() {
 
   const modalidadInfo = carrito?.modalidad === 'domicilio'
     ? { nombre: 'Entrega a domicilio', descripcion: 'El envío se calculará antes de confirmar.', icono: Bike }
-    : carrito?.modalidad === 'retirar'
-      ? { nombre: 'Retiro en el restaurante', descripcion: 'Recoge tu pedido en el local.', icono: Package }
-      : { nombre: 'Servir en el restaurante', descripcion: 'Consume tu pedido en el local.', icono: UtensilsCrossed }
+    : { nombre: 'Retiro en el restaurante', descripcion: 'Retira ahora o programa la recogida.', icono: Package }
   const IconoModalidad = modalidadInfo.icono
 
   return (
