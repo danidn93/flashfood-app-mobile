@@ -66,7 +66,7 @@ export function obtenerCarrito(): Carrito | null {
 
     // No conservar pedidos antiguos de "servirse": tenían precios diferentes
     // y el servidor ya no acepta esa modalidad.
-    if (carrito.modalidad === 'servir' || !['retirar','domicilio'].includes(carrito.modalidad)) {
+    if (!['retirar','domicilio'].includes(carrito.modalidad)) {
       guardar(null)
       return null
     }
