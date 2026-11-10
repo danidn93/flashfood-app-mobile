@@ -191,7 +191,7 @@ Deno.serve(async req => {
       if(modality!=='domicilio'&&method!=='local')return fail('El retiro debe pagarse en el establecimiento')
       let pickupAt:null|string=null
       if(body.scheduled_pickup_at!=null){
-        if(modality!=='retirar'||typeof body.scheduled_pickup_at!=='string'||!/[zZ]|[+-]\\d{2}:\\d{2}$/.test(body.scheduled_pickup_at))
+        if(modality!=='retirar'||typeof body.scheduled_pickup_at!=='string'||!/(?:[zZ]|[+-]\d{2}:\d{2})$/.test(body.scheduled_pickup_at))
           return fail('La programación solo está disponible para retiro en local',400)
         const scheduled=new Date(body.scheduled_pickup_at)
         if(!Number.isFinite(scheduled.getTime())||
