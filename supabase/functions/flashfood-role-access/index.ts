@@ -131,7 +131,7 @@ Deno.serve(async req=>{
      return respond({ok:true,message:data})
    }
    const next=String(body.stage||'')
-   const expected:Record<string,string>={recibido:'preparando',preparando:'listo',listo:'asignando'}
+   const expected:Record<string,string>={recibido:'preparando',preparando:'listo',listo:order.fulfillment==='pickup'?'retirado':'asignando'}
    if(expected[stage]!==next)return bad('El estado no sigue el flujo permitido',409)
    if(order.status==='cancelled'||(order.payment_method==='payphone'||order.payment_method==='transfer')
      &&order.payment_status!=='paid')return bad('No se puede preparar un pedido sin pago confirmado',409)
@@ -146,6 +146,13 @@ Deno.serve(async req=>{
    if(changeError)throw changeError
    if(!changed)return bad('El pedido fue actualizado por otra persona. Recarga.',409)
    await db.from('flashfood_order_stage_events').insert({order_id:order.id,stage:next,actor_id:caller})
+   if(next==='retirado'&&order.fulfillment==='pickup'){
+     const {error:finishError}=await db.from('flashfood_orders')
+       .update({status:'delivered',updated_at:new Date().toISOString()})
+       .eq('id',order.id).eq('fulfillment','pickup')
+     if(finishError)throw finishError
+     return respond({ok:true,stage:'retirado'})
+   }
    if(next==='listo'&&order.fulfillment==='delivery'){
      const {data:advance,error:advanceError}=await db.from('flashfood_order_progress')
        .update({stage:'asignando',updated_at:new Date().toISOString(),updated_by:caller})
