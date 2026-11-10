@@ -82,7 +82,7 @@ Deno.serve(async req=>{
    const assignedBranches=grants.filter(g=>g.business_id===businessId&&g.active&&g.branch_id).map(g=>g.branch_id)
    const unrestricted=superadmin||grants.some(g=>g.business_id===businessId&&g.active&&g.role==='admin'&&!g.branch_id)
     ||grants.some(g=>g.business_id===businessId&&g.active&&g.role==='empleado'&&!g.branch_id)
-   let query=db.from('flashfood_orders').select('id,order_number,mobile_branch_id,fulfillment,status,payment_method,payment_status,products_total,created_at,customer_note')
+   let query=db.from('flashfood_orders').select('id,order_number,mobile_branch_id,fulfillment,status,payment_method,payment_status,products_total,created_at,customer_note,scheduled_pickup_at')
     .eq('mobile_local_id',businessId).order('created_at',{ascending:false}).limit(100)
    if(!unrestricted){
     if(!assignedBranches.length)return respond({ok:true,orders:[]})
