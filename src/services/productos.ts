@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase'
 
-export type ModalidadPedido = 'servir' | 'retirar' | 'domicilio'
+export type ModalidadPedido = 'retirar' | 'domicilio'
 
 export type PresentacionProducto = {
   id: string
@@ -35,12 +35,9 @@ type DisponibilidadDB = {
 
 export function calcularPrecio(
   producto: Pick<ProductoMenu, 'precio' | 'precio_para_llevar'>,
-  modalidad: ModalidadPedido,
+  _modalidad: ModalidadPedido,
 ): number {
-  const precio =
-    modalidad === 'servir'
-      ? producto.precio
-      : producto.precio_para_llevar ?? producto.precio
+  const precio = producto.precio_para_llevar ?? producto.precio
 
   return Number(precio)
 }
