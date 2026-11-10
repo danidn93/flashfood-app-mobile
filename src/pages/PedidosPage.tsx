@@ -7,7 +7,7 @@ import FlashFoodOrderChat from '../components/marketplace/FlashFoodOrderChat'
 type Order={
  id:string;created_at:string;status:string;payment_status:string;payment_method:string;
  total:number;delivery_fee:number;branch_id:string;modality:string;
- route_km:number|null;assigned_driver_id:string|null;address_snapshot:Record<string,unknown>|null
+ route_km:number|null;assigned_driver_id:string|null;scheduled_pickup_at:string|null;address_snapshot:Record<string,unknown>|null
 }
 type Position={latitude:number;longitude:number;accuracy_m:number|null;recorded_at:string}
 type DriverIdentity={name:string;vehicle_type:string|null;vehicle_plate:string|null;photo_url:string|null}
@@ -74,11 +74,14 @@ export default function PedidosPage(){
    const nav=p?`https://www.google.com/maps/search/?api=1&query=${p.latitude},${p.longitude}`:null
    return <article key={o.id} className="rounded-2xl bg-white p-5 shadow-sm">
     <div className="flex justify-between gap-3"><div><p className="text-xs text-gray-400">Pedido {o.id.slice(0,8).toUpperCase()}</p><h2 className="mt-1 font-extrabold">{labels[o.status]||o.status}</h2></div><span className="text-lg font-extrabold">{format(Number(o.total))}</span></div>
-    <p className="mt-2 text-xs text-gray-500">{new Date(o.created_at).toLocaleString('es-EC')} · {o.modality==='domicilio'?'Entrega a domicilio':'Retiro o consumo'}</p>
+    <p className="mt-2 text-xs text-gray-500">{new Date(o.created_at).toLocaleString('es-EC')} · {o.modality==='domicilio'?'Entrega a domicilio':'Retiro en local'}</p>
     <p className="mt-2 text-sm font-semibold text-orange-600">{({
       recibido:'Recibido',preparando:'Preparando',listo:'Listo',asignando:'Buscando repartidor',
       retirando:'Retirando el pedido',reparto:'En reparto',entregado:'Entregado',cancelado:'Cancelado',
     } as Record<string,string>)[progress[o.id]||'recibido']||'Recibido'}</p>
+    {o.modality==='retirar'&&<p className="mt-2 text-sm font-semibold text-orange-700">{o.scheduled_pickup_at
+     ? `Retiro programado: ${new Date(o.scheduled_pickup_at).toLocaleString('es-EC',{timeZone:'America/Guayaquil',dateStyle:'medium',timeStyle:'short'})}`
+     : 'Retiro lo antes posible'}</p>}
     {o.payment_status!=='paid'&&<p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs text-amber-900">Pago: {o.payment_method==='transferencia'?'Transferencia pendiente de verificación':o.payment_method==='tarjeta'?'Confirmación PayPhone pendiente':'Cobro pendiente al recibir o retirar'}</p>}
     {o.modality==='domicilio'&&(drivers[o.id]?<div className="mt-3 flex items-center gap-3 rounded-xl border border-orange-100 bg-orange-50 p-3">
        {drivers[o.id].photo_url?<img src={drivers[o.id].photo_url!} alt="Foto del repartidor" className="h-16 w-16 rounded-full object-cover"/>:<div className="flex h-16 w-16 items-center justify-center rounded-full bg-orange-100"><Bike size={24} className="text-orange-600"/></div>}
