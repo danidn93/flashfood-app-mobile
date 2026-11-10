@@ -2,7 +2,7 @@ import {useCallback,useEffect,useState} from 'react'
 import {Bell,Check,RefreshCw,ShoppingBag} from 'lucide-react'
 import {roleRequest} from '../../services/roles'
 import FlashFoodOrderChat from './FlashFoodOrderChat'
-type Order={id:string;order_number:number;mobile_branch_id:string;status:string;fulfillment:string;payment_method:string;payment_status:string;products_total:number;created_at:string}
+type Order={id:string;order_number:number;mobile_branch_id:string;status:string;fulfillment:string;payment_method:string;payment_status:string;products_total:number;created_at:string;scheduled_pickup_at:string|null}
 type Alert={id:string;order_id:string;title:string;message:string;read_at:string|null;created_at:string}
 const usd=(n:number)=>new Intl.NumberFormat('es-EC',{currency:'USD',style:'currency'}).format(n)
 export default function FlashFoodMerchantOrders({businessId}:{businessId:string}){
@@ -63,7 +63,7 @@ export default function FlashFoodMerchantOrders({businessId}:{businessId:string}
   </div>
   <div className="rounded-2xl border bg-white p-4"><h3 className="flex items-center gap-2 font-bold"><ShoppingBag size={18}/>Compras registradas</h3>
    {!orders.length&&<p className="mt-3 text-sm text-slate-500">Todavía no hay compras de FlashFood.</p>}
-   <div className="mt-3 space-y-2">{orders.map(o=><div key={o.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4"><div><p className="text-xs text-slate-400">Pedido #{o.order_number} · {new Date(o.created_at).toLocaleString('es-EC')}</p><p className="mt-1 font-semibold">{stageName[progress[o.id]]||'Recibido'} · {o.fulfillment==='delivery'?'Domicilio':'Retiro'}</p><p className="text-xs text-slate-500">Pago: {o.payment_method} / {o.payment_status}</p></div>
+   <div className="mt-3 space-y-2">{orders.map(o=><div key={o.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4"><div><p className="text-xs text-slate-400">Pedido #{o.order_number} · {new Date(o.created_at).toLocaleString('es-EC')}</p><p className="mt-1 font-semibold">{stageName[progress[o.id]]||'Recibido'} · {o.fulfillment==='delivery'?'Domicilio':'Retiro'}</p><p className="text-xs text-slate-500">Pago: {o.payment_method} / {o.payment_status}</p>{o.fulfillment==='pickup'&&<p className="mt-1 text-xs font-bold text-orange-700">{o.scheduled_pickup_at?`Retiro programado: ${new Date(o.scheduled_pickup_at).toLocaleString('es-EC',{timeZone:'America/Guayaquil',dateStyle:'medium',timeStyle:'short'})}`:'Retiro lo antes posible'}</p>}</div>
  <div className="flex flex-wrap items-center gap-2"><strong>{usd(Number(o.products_total))}</strong>
  {['recibido','preparando'].includes(progress[o.id]||'recibido')&&<button disabled={saving} onClick={()=>void advance(o.id,progress[o.id]==='preparando'?'listo':'preparando')} className="rounded-lg bg-orange-500 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{progress[o.id]==='preparando'?'Marcar listo':'Iniciar preparación'}</button>}
  <button onClick={()=>setSelected(old=>old===o.id?'':o.id)} className="rounded-lg border px-3 py-2 text-xs">{selected===o.id?'Cerrar chat':'Abrir chat'}</button>
