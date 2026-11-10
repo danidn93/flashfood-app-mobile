@@ -64,6 +64,13 @@ export function obtenerCarrito(): Carrito | null {
       return null
     }
 
+    // No conservar pedidos antiguos de "servirse": tenían precios diferentes
+    // y el servidor ya no acepta esa modalidad.
+    if (carrito.modalidad === 'servir' || !['retirar','domicilio'].includes(carrito.modalidad)) {
+      guardar(null)
+      return null
+    }
+
     if (
       typeof carrito.ultimaSalidaEn === 'number' &&
       Number.isFinite(carrito.ultimaSalidaEn)
