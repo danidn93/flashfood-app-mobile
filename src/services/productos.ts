@@ -35,7 +35,7 @@ type DisponibilidadDB = {
 
 export function calcularPrecio(
   producto: Pick<ProductoMenu, 'precio' | 'precio_para_llevar'>,
-  _modalidad: ModalidadPedido,
+  ..._args: [ModalidadPedido],
 ): number {
   const precio = producto.precio_para_llevar ?? producto.precio
 
