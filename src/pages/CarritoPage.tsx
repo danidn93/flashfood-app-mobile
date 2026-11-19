@@ -275,7 +275,7 @@ export default function CarritoPage() {
   const [timeNow,setTimeNow] = useState(0)
   useEffect(()=>{
     const update=()=>setTimeNow(Date.now())
-    update()
+    queueMicrotask(update)
     const timer=window.setInterval(update,60000)
     return ()=>window.clearInterval(timer)
   },[])
