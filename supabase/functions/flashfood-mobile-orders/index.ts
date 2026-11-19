@@ -382,6 +382,45 @@ Deno.serve(async req => {
       return send({ok:true,order:toMobile(order),position})
     }
 
+    if(action==='driver_route'){
+      if(!driverRole||!driver?.active||!driver.verified||!uuid(body.order_id))
+        return fail('Solo el repartidor asignado puede consultar la ruta',403)
+      const {data:order,error:orderError}=await db.from('flashfood_orders')
+        .select('id,driver_id,delivery_address,status,fulfillment')
+        .eq('id',body.order_id).eq('driver_id',driver.id).eq('status','in_transit')
+        .eq('fulfillment','delivery').maybeSingle()
+      if(orderError)throw orderError
+      if(!order)return fail('La ruta se muestra después de retirar el pedido',403)
+      const destination=order.delivery_address as Record<string,unknown>|null
+      const latitude=Number(destination?.latitude),longitude=Number(destination?.longitude)
+      if(!originOK(latitude,longitude))return fail('El destino no tiene coordenadas válidas',422)
+      const {data:position,error:positionError}=await db.from('flashfood_driver_positions')
+        .select('latitude,longitude,recorded_at').eq('order_id',order.id)
+        .eq('driver_id',driver.id).maybeSingle()
+      if(positionError)throw positionError
+      if(!position||Date.now()-new Date(position.recorded_at).getTime()>120000
+        ||!originOK(position.latitude,position.longitude))
+        return fail('No hay ubicación reciente del repartidor para calcular la ruta',422)
+      const key=Deno.env.get('OPENROUTESERVICE_API_KEY')
+      if(!key)return fail('Configura OPENROUTESERVICE_API_KEY para consultar rutas viales',503)
+      const response=await fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson',{
+        method:'POST',headers:{Authorization:key,'Content-Type':'application/json'},
+        body:JSON.stringify({coordinates:[[position.longitude,position.latitude],[longitude,latitude]]}),
+        signal:AbortSignal.timeout(15000)
+      })
+      if(!response.ok)return fail('El servicio de rutas no está disponible',502)
+      const routeData=await response.json()
+      const feature=routeData.features?.[0]
+      const coordinates=feature?.geometry?.coordinates
+      if(!Array.isArray(coordinates)||coordinates.length<2)return fail('No se encontró un recorrido vial',422)
+      const stride=Math.max(1,Math.ceil(coordinates.length/400))
+      const path=coordinates.filter((_:unknown,i:number)=>i%stride===0||i===coordinates.length-1)
+        .map((point:unknown)=>Array.isArray(point)?[Number(point[1]),Number(point[0])]:[])
+        .filter((point:number[])=>point.length===2&&originOK(point[0],point[1]))
+      return send({ok:true,route:{path,distance_km:Math.round(Number(feature.properties?.summary?.distance||0)/100)/10,
+        duration_minutes:Math.ceil(Number(feature.properties?.summary?.duration||0)/60)}})
+    }
+
     if(action==='driver_identity'){
       if(!uuid(body.order_id))return fail('Pedido inválido')
       const {data:order,error:orderError}=await db.from('flashfood_orders')
