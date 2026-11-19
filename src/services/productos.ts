@@ -35,11 +35,13 @@ type DisponibilidadDB = {
 
 export function calcularPrecio(
   producto: Pick<ProductoMenu, 'precio' | 'precio_para_llevar'>,
-  ..._args: [ModalidadPedido]
+  modalidad: ModalidadPedido,
 ): number {
-  const precio = producto.precio_para_llevar ?? producto.precio
-
-  return Number(precio)
+  switch(modalidad){
+    case 'domicilio':
+    case 'retirar':
+      return Number(producto.precio_para_llevar ?? producto.precio)
+  }
 }
 
 export function obtenerPrecioMinimo(
