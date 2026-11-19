@@ -16,7 +16,7 @@ function valid(point:Point|undefined|null):point is Point{
 function loadLeaflet():Promise<LeafletLibrary>{
  if(window.L)return Promise.resolve(window.L)
  if(window.flashfoodLeafletPromise)return window.flashfoodLeafletPromise
- window.flashfoodLeafletPromise=new Promise((resolve,reject)=>{
+ window.flashfoodLeafletPromise=new Promise<LeafletLibrary>((resolve,reject)=>{
   if(!document.querySelector('link[data-flashfood-leaflet]')){
    const css=document.createElement('link')
    css.rel='stylesheet';css.dataset.flashfoodLeaflet='1'
