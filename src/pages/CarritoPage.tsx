@@ -272,10 +272,17 @@ export default function CarritoPage() {
   }, [subtotal, esDelivery, costoEnvio, propina, metodoPago])
   const pendienteEnvio = esDelivery && costoEnvio === null
 
-  const fechaRetiroMinima = useMemo(()=>new Date(Date.now()+30*60000),[])
-  const fechaRetiroMaxima = useMemo(()=>new Date(Date.now()+7*86400000),[])
+  const [timeNow,setTimeNow] = useState(0)
+  useEffect(()=>{
+    const update=()=>setTimeNow(Date.now())
+    update()
+    const timer=window.setInterval(update,60000)
+    return ()=>window.clearInterval(timer)
+  },[])
+  const fechaRetiroMinima = useMemo(()=>new Date(timeNow+30*60000),[timeNow])
+  const fechaRetiroMaxima = useMemo(()=>new Date(timeNow+7*86400000),[timeNow])
   const fechaRetiroValida = !programarRetiro || (
-    !!fechaRetiro && Number.isFinite(new Date(fechaRetiro).getTime()) &&
+    timeNow>0 && !!fechaRetiro && Number.isFinite(new Date(fechaRetiro).getTime()) &&
     new Date(fechaRetiro).getTime() >= fechaRetiroMinima.getTime() &&
     new Date(fechaRetiro).getTime() <= fechaRetiroMaxima.getTime()
   )
