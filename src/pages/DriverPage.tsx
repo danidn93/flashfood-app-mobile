@@ -26,6 +26,8 @@ export default function DriverPage(){
  const [vehiclePlate,setVehiclePlate]=useState('')
  const [photo,setPhoto]=useState<File|null>(null)
  const [gps,setGps]=useState<{lat:number;lng:number;accuracy:number}|null>(null)
+ const [routes,setRoutes]=useState<Record<string,{path:[number,number][];distance_km:number;duration_minutes:number}>>({})
+ const [routing,setRouting]=useState('')
  const reload=useCallback(async()=>{
   setLoading(true)
   try{
@@ -205,6 +207,15 @@ export default function DriverPage(){
     if(watcherId)void backgroundGPS.removeWatcher({id:watcherId})
   }
  },[activeId])
+ const calculateRoute=async(orderId:string)=>{
+  setRouting(orderId);setError('')
+  try{
+   const result=await call('driver_route',{order_id:orderId})
+   if(!result.route||!Array.isArray(result.route.path))throw new Error('No hay ruta disponible')
+   setRoutes(old=>({...old,[orderId]:result.route}))
+  }catch(e){setError(e instanceof Error?e.message:'No se pudo calcular la ruta')}
+  finally{setRouting('')}
+ }
  const locate=()=>{
   if(!navigator.geolocation){setError('Ubicación no disponible');return}
   navigator.geolocation.getCurrentPosition(p=>setGps({lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy}),e=>setError(e.message),{enableHighAccuracy:true,timeout:12000})
@@ -268,7 +279,18 @@ export default function DriverPage(){
       <p className="text-xs text-gray-500">Pedido #{o.id.slice(0,8)} · {o.status}</p>
       <p className="mt-2 font-bold">{String(dest?.address_line||'Dirección por confirmar')}</p>
       <p className="mt-1 text-sm text-gray-500">{String(dest?.city||'')} · {String(dest?.reference||'')}</p>
-      {coords&&gps&&o.status==='picked_up'&&<div className="mt-4"><p className="mb-2 text-sm font-bold text-gray-700">Tu ubicación y destino</p><LiveDeliveryMap driver={{latitude:gps.lat,longitude:gps.lng}} destination={coords}/></div>}
+      {coords&&o.status==='picked_up'&&<div className="mt-4 space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-bold text-gray-700">Tu ruta hasta la dirección del cliente</p>
+          <button disabled={routing===o.id||!gps} onClick={()=>void calculateRoute(o.id)}
+            className="rounded-lg border border-orange-300 px-3 py-2 text-xs font-bold text-orange-700 disabled:opacity-50">
+            {routing===o.id?'Calculando…':routes[o.id]?'Recalcular ruta':'Calcular ruta vial'}
+          </button>
+        </div>
+        {routes[o.id]&&<p className="text-xs text-slate-600">Ruta estimada: {routes[o.id].distance_km} km · {routes[o.id].duration_minutes} minutos, según vías disponibles</p>}
+        {gps?<LiveDeliveryMap key={o.id+'-'+(routes[o.id]?.path.length||0)} driver={{latitude:gps.lat,longitude:gps.lng}}
+          destination={coords} route={routes[o.id]?.path}/>:<p className="text-xs text-amber-700">Activa el GPS para ver tu ubicación y calcular una ruta vial.</p>}
+      </div>}
       <p className="mt-2 text-xs text-gray-500">Para indicaciones giro a giro, utiliza Google Maps o Waze. Si tu vehículo admite CarPlay o Android Auto, la navegación se mostrará allí a través de la aplicación compatible.</p>
       <div className="mt-4 flex flex-wrap gap-2">
        {maps&&<a href={maps} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border px-4 py-3 font-bold text-orange-600"><MapPin size={17}/>Abrir ruta en Google Maps</a>}
