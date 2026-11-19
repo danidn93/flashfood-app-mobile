@@ -274,11 +274,11 @@ export default function CarritoPage() {
 
   const fechaRetiroValida = !programarRetiro || (
     !!fechaRetiro && Number.isFinite(new Date(fechaRetiro).getTime()) &&
-    new Date(fechaRetiro).getTime() >= Date.now()+30*60000 &&
-    new Date(fechaRetiro).getTime() <= Date.now()+7*86400000
+    new Date(fechaRetiro).getTime() >= fechaRetiroMinima.getTime() &&
+    new Date(fechaRetiro).getTime() <= fechaRetiroMaxima.getTime()
   )
-  const fechaRetiroMinima = new Date(Date.now()+30*60000)
-  const fechaRetiroMaxima = new Date(Date.now()+7*86400000)
+  const fechaRetiroMinima = useMemo(()=>new Date(Date.now()+30*60000),[])
+  const fechaRetiroMaxima = useMemo(()=>new Date(Date.now()+7*86400000),[])
   const formatoFechaLocal = (d:Date)=>[
     d.getFullYear(),'-',String(d.getMonth()+1).padStart(2,'0'),'-',
     String(d.getDate()).padStart(2,'0'),'T',
