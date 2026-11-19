@@ -21,6 +21,7 @@ export default function PedidosPage(){
  const [orders,setOrders]=useState<Order[]>([])
  const [error,setError]=useState('')
  const [loading,setLoading]=useState(false)
+ const [lastCheck,setLastCheck]=useState(0)
  const [drivers,setDrivers]=useState<Record<string,DriverIdentity>>({})
  const [selectedChat,setSelectedChat]=useState('')
  const [progress,setProgress]=useState<Record<string,string>>({})
@@ -33,6 +34,7 @@ export default function PedidosPage(){
    if(!data?.ok)throw new Error(data?.error||'No se pudieron consultar los pedidos')
    const rows=data.orders as Order[]
    setOrders(rows)
+   setLastCheck(Date.now())
    const active=rows.filter(x=>['assigned','accepted','picked_up'].includes(x.status))
    const positions:Record<string,Position>={}
    await Promise.all(active.map(async x=>{
@@ -72,7 +74,7 @@ export default function PedidosPage(){
   <div className="space-y-3">
   {orders.map(o=>{
    const p=tracking[o.id]
-   const fresh=p&&Number.isFinite(new Date(p.recorded_at).getTime())&&Date.now()-new Date(p.recorded_at).getTime()<120000
+   const fresh=p&&Number.isFinite(new Date(p.recorded_at).getTime())&&lastCheck-new Date(p.recorded_at).getTime()<120000
    const nav=p?`https://www.google.com/maps/search/?api=1&query=${p.latitude},${p.longitude}`:null
    const lat=Number(o.address_snapshot?.latitude),lng=Number(o.address_snapshot?.longitude)
    const dest=Number.isFinite(lat)&&Number.isFinite(lng)&&Math.abs(lat)<=90&&Math.abs(lng)<=180?{latitude:lat,longitude:lng}:null
