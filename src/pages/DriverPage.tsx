@@ -260,7 +260,7 @@ export default function DriverPage(){
     {orders.map(o=>{
      const step=next[o.status]
      const dest=o.address_snapshot
-     const coords=dest&&typeof dest.latitude==='number'&&typeof dest.longitude==='number'?dest:null
+     const coords=dest&&typeof dest.latitude==='number'&&typeof dest.longitude==='number'&&Number.isFinite(dest.latitude)&&Number.isFinite(dest.longitude)?{latitude:dest.latitude,longitude:dest.longitude}:null
      const maps=coords?`https://www.google.com/maps/dir/?api=1&destination=${coords.latitude},${coords.longitude}&travelmode=driving&dir_action=navigate`:null
      const waze=coords?`https://waze.com/ul?ll=${coords.latitude}%2C${coords.longitude}&navigate=yes`:null
      return <article key={o.id} className="rounded-2xl border border-orange-100 bg-white p-5">
