@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Bike, MapPin, RefreshCw, ShoppingBag } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import FlashFoodOrderChat from '../components/marketplace/FlashFoodOrderChat'
+import LiveDeliveryMap from '../components/marketplace/LiveDeliveryMap'
 
 type Order={
  id:string;created_at:string;status:string;payment_status:string;payment_method:string;
@@ -32,7 +33,7 @@ export default function PedidosPage(){
    if(!data?.ok)throw new Error(data?.error||'No se pudieron consultar los pedidos')
    const rows=data.orders as Order[]
    setOrders(rows)
-   const active=rows.filter(x=>['accepted','picked_up'].includes(x.status))
+   const active=rows.filter(x=>['assigned','accepted','picked_up'].includes(x.status))
    const positions:Record<string,Position>={}
    await Promise.all(active.map(async x=>{
     const result=await supabase.functions.invoke('flashfood-mobile-orders',{body:{action:'status',order_id:x.id}})
@@ -58,7 +59,7 @@ export default function PedidosPage(){
  },[])
  useEffect(()=>{
   queueMicrotask(()=>{void refresh()})
-  const timer=window.setInterval(()=>{if(document.visibilityState==='visible')void refresh()},20000)
+  const timer=window.setInterval(()=>{if(document.visibilityState==='visible')void refresh()},10000)
   return ()=>window.clearInterval(timer)
  },[refresh])
  return <main className="mx-auto max-w-3xl px-4 pb-36 pt-7">
@@ -71,7 +72,10 @@ export default function PedidosPage(){
   <div className="space-y-3">
   {orders.map(o=>{
    const p=tracking[o.id]
+   const fresh=p&&Number.isFinite(new Date(p.recorded_at).getTime())&&Date.now()-new Date(p.recorded_at).getTime()<120000
    const nav=p?`https://www.google.com/maps/search/?api=1&query=${p.latitude},${p.longitude}`:null
+   const lat=Number(o.address_snapshot?.latitude),lng=Number(o.address_snapshot?.longitude)
+   const dest=Number.isFinite(lat)&&Number.isFinite(lng)&&Math.abs(lat)<=90&&Math.abs(lng)<=180?{latitude:lat,longitude:lng}:null
    return <article key={o.id} className="rounded-2xl bg-white p-5 shadow-sm">
     <div className="flex justify-between gap-3"><div><p className="text-xs text-gray-400">Pedido {o.id.slice(0,8).toUpperCase()}</p><h2 className="mt-1 font-extrabold">{labels[o.status]||o.status}</h2></div><span className="text-lg font-extrabold">{format(Number(o.total))}</span></div>
     <p className="mt-2 text-xs text-gray-500">{new Date(o.created_at).toLocaleString('es-EC')} · {o.modality==='domicilio'?'Entrega a domicilio':'Retiro en local'}</p>
@@ -91,10 +95,11 @@ export default function PedidosPage(){
     <button type="button" onClick={()=>setSelectedChat(x=>x===o.id?'':o.id)}
        className="mt-3 rounded-lg border px-3 py-2 text-sm font-semibold text-orange-700">{selectedChat===o.id?'Cerrar chat':'Chat del pedido'}</button>
     {selectedChat===o.id&&<div className="mt-3"><FlashFoodOrderChat orderId={o.id}/></div>}
+    {p&&fresh&&o.modality==='domicilio'&&<div className="mt-3 rounded-xl bg-white p-3 text-sm border border-orange-100"><h3 className="mb-2 font-bold text-orange-700">Sigue a tu repartidor en el mapa</h3><LiveDeliveryMap driver={p} destination={dest}/></div>}
     {p&&<div className="mt-3 rounded-xl bg-orange-50 p-3 text-sm"><p className="font-bold text-orange-800">Última ubicación compartida</p><p className="mt-1 text-xs text-orange-900">{new Date(p.recorded_at).toLocaleString('es-EC')} · precisión aprox. {Math.round(p.accuracy_m||0)} m</p>{nav&&<a href={nav} target="_blank" rel="noreferrer" className="mt-2 inline-block font-bold text-orange-700">Ver ubicación en el mapa</a>}</div>}
    </article>
   })}
   </div>
-  <p className="mt-5 text-xs text-gray-400">El seguimiento depende de que el repartidor haya aceptado el pedido y tenga abierta la aplicación con permiso de ubicación.</p>
+  <p className="mt-5 text-xs text-gray-400">El seguimiento está disponible después de asignar al repartidor y finaliza al entregar el pedido. La ubicación depende del permiso GPS, conectividad y actualizaciones del dispositivo. No mostramos posiciones de más de 2 minutos como ubicación en vivo.</p>
  </main>
 }
