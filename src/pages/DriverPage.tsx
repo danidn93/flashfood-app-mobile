@@ -4,6 +4,7 @@ import { Bike, CheckCircle2, CircleOff, LocateFixed, MapPin, RefreshCw, ShieldAl
 import { roleRequest } from '../services/roles'
 import { supabase } from '../lib/supabase'
 import FlashFoodOrderChat from '../components/marketplace/FlashFoodOrderChat'
+import LiveDeliveryMap from '../components/marketplace/LiveDeliveryMap'
 import {Capacitor,registerPlugin} from '@capacitor/core'
 import type {BackgroundGeolocationPlugin} from '@capacitor-community/background-geolocation'
 const backgroundGPS=registerPlugin<BackgroundGeolocationPlugin>('BackgroundGeolocation')
@@ -260,13 +261,17 @@ export default function DriverPage(){
      const step=next[o.status]
      const dest=o.address_snapshot
      const coords=dest&&typeof dest.latitude==='number'&&typeof dest.longitude==='number'?dest:null
-     const maps=coords?`https://www.google.com/maps/dir/?api=1&destination=${coords.latitude},${coords.longitude}&travelmode=driving`:null
+     const maps=coords?`https://www.google.com/maps/dir/?api=1&destination=${coords.latitude},${coords.longitude}&travelmode=driving&dir_action=navigate`:null
+     const waze=coords?`https://waze.com/ul?ll=${coords.latitude}%2C${coords.longitude}&navigate=yes`:null
      return <article key={o.id} className="rounded-2xl border border-orange-100 bg-white p-5">
       <p className="text-xs text-gray-500">Pedido #{o.id.slice(0,8)} · {o.status}</p>
       <p className="mt-2 font-bold">{String(dest?.address_line||'Dirección por confirmar')}</p>
       <p className="mt-1 text-sm text-gray-500">{String(dest?.city||'')} · {String(dest?.reference||'')}</p>
+      {coords&&gps&&o.status==='picked_up'&&<div className="mt-4"><p className="mb-2 text-sm font-bold text-gray-700">Tu ubicación y destino</p><LiveDeliveryMap driver={{latitude:gps.lat,longitude:gps.lng}} destination={coords}/></div>}
+      <p className="mt-2 text-xs text-gray-500">Para indicaciones giro a giro, utiliza Google Maps o Waze. Si tu vehículo admite CarPlay o Android Auto, la navegación se mostrará allí a través de la aplicación compatible.</p>
       <div className="mt-4 flex flex-wrap gap-2">
-       {maps&&<a href={maps} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border px-4 py-3 font-bold text-orange-600"><MapPin size={17}/>Navegar</a>}
+       {maps&&<a href={maps} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border px-4 py-3 font-bold text-orange-600"><MapPin size={17}/>Abrir ruta en Google Maps</a>}
+       {waze&&<a href={waze} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border px-4 py-3 font-bold text-blue-600"><MapPin size={17}/>Abrir ruta en Waze</a>}
        <button disabled={saving} onClick={()=>void transition(o)} className="rounded-xl bg-orange-500 px-4 py-3 font-bold text-white disabled:opacity-40">{step.status==='delivered'&&o.payment_method==='efectivo'?'Entregado y efectivo recibido':step.label}</button>
        <button type="button" onClick={()=>setChatOrder(v=>v===o.id?'':o.id)} className="rounded-xl border px-4 py-3 font-bold text-orange-600">{chatOrder===o.id?'Cerrar chat':'Chat del pedido'}</button>
       </div>
