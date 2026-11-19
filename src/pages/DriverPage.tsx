@@ -263,6 +263,7 @@ export default function DriverPage(){
      const coords=dest&&typeof dest.latitude==='number'&&typeof dest.longitude==='number'&&Number.isFinite(dest.latitude)&&Number.isFinite(dest.longitude)?{latitude:dest.latitude,longitude:dest.longitude}:null
      const maps=coords?`https://www.google.com/maps/dir/?api=1&destination=${coords.latitude},${coords.longitude}&travelmode=driving&dir_action=navigate`:null
      const waze=coords?`https://waze.com/ul?ll=${coords.latitude}%2C${coords.longitude}&navigate=yes`:null
+     const appleMaps=coords?`https://maps.apple.com/?daddr=${coords.latitude},${coords.longitude}&dirflg=d`:null
      return <article key={o.id} className="rounded-2xl border border-orange-100 bg-white p-5">
       <p className="text-xs text-gray-500">Pedido #{o.id.slice(0,8)} · {o.status}</p>
       <p className="mt-2 font-bold">{String(dest?.address_line||'Dirección por confirmar')}</p>
@@ -272,6 +273,7 @@ export default function DriverPage(){
       <div className="mt-4 flex flex-wrap gap-2">
        {maps&&<a href={maps} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border px-4 py-3 font-bold text-orange-600"><MapPin size={17}/>Abrir ruta en Google Maps</a>}
        {waze&&<a href={waze} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border px-4 py-3 font-bold text-blue-600"><MapPin size={17}/>Abrir ruta en Waze</a>}
+       {appleMaps&&<a href={appleMaps} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border px-4 py-3 font-bold text-slate-700"><MapPin size={17}/>Abrir en Apple Maps</a>}
        <button disabled={saving} onClick={()=>void transition(o)} className="rounded-xl bg-orange-500 px-4 py-3 font-bold text-white disabled:opacity-40">{step.status==='delivered'&&o.payment_method==='efectivo'?'Entregado y efectivo recibido':step.label}</button>
        <button type="button" onClick={()=>setChatOrder(v=>v===o.id?'':o.id)} className="rounded-xl border px-4 py-3 font-bold text-orange-600">{chatOrder===o.id?'Cerrar chat':'Chat del pedido'}</button>
       </div>
